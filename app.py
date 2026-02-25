@@ -1,52 +1,54 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="The Gang - Final Fix", layout="wide")
-st.title("🛡️ The Gang: Fehlerfreier Tausch-Rechner")
+st.set_page_config(page_title="The Gang - Finaler Fix", layout="wide")
+st.title("🛡️ The Gang: Präzisions-Tausch")
 
 SHEET_ID = "1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo"
 DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 try:
-    # Wir laden diesmal MIT Header ab Zeile 4 (wo K1, K2 steht)
-    df = pd.read_csv(DATA_URL, header=3) 
+    # Wir laden die Tabelle komplett ohne Header-Logik
+    df = pd.read_csv(DATA_URL, header=None)
     
     gebot = []
     bedarf = []
 
-    # Wir gehen durch alle Spieler (Troy bis Paul)
-    for idx, row in df.iterrows():
+    # Wir scannen exakt ab Zeile 5 (Index 4 in Python)
+    # Das ist die Zeile, in der 'Troy' steht
+    for idx in range(4, len(df)):
+        row = df.iloc[idx]
         spieler = str(row.iloc[0]).strip()
-        # Abbruch wenn wir am Ende der Liste sind
-        if spieler.lower() in ["nan", "", "name", "unnamed"]: continue
         
-        # Scan durch 15 Decks
+        # Sicherheits-Check für den Namen
+        if spieler.lower() in ["nan", "", "name", "unnamed: 0"]: continue
+
+        # Wir gehen durch 15 Decks
         for d_nr in range(1, 16):
-            # Start-Spalte: Deck 1 = 1, Deck 2 = 11, Deck 3 = 21...
-            start_idx = 1 + (d_nr - 1) * 10
+            # Start-Spalte: B=1, L=11, V=21...
+            start_col = 1 + (d_nr - 1) * 10
             
             for k_idx in range(9):
-                col = start_idx + k_idx
-                if col < len(row):
-                    val = row.iloc[col]
+                col_idx = start_col + k_idx
+                if col_idx < len(row):
+                    val = row.iloc[col_idx]
                     
-                    # STRENGE PRÜFUNG:
-                    # Nur wenn eine ECHTE 0 drinsteht, wird Bedarf angemeldet
-                    # Nur wenn eine ECHTE Zahl >= 2 drinsteht, wird Gebot angemeldet
+                    # Nur verarbeiten, wenn es eine echte Zahl ist
                     try:
-                        anzahl = int(float(val))
-                        karte_name = f"Deck {d_nr}-K{k_idx+1}"
+                        # Wir wandeln in Float und dann Int um, um Fehler zu vermeiden
+                        anzahl = int(float(str(val).replace(',', '.')))
+                        karte_label = f"D{d_nr}-K{k_idx+1}"
                         
-                        if anzahl >= 2:
-                            gebot.append({"von": spieler, "karte": karte_name})
-                        elif anzahl == 0:
-                            # Wir prüfen hier nochmal, ob das Feld nicht einfach leer war
-                            if pd.notna(val):
-                                bedarf.append({"an": spieler, "karte": karte_name})
+                        # Johny-Schutz: Nur bei ECHTER Null ist Bedarf
+                        if anzahl == 0:
+                            bedarf.append({"an": spieler, "karte": karte_label})
+                        elif anzahl >= 2:
+                            gebot.append({"von": spieler, "karte": karte_label})
                     except:
-                        continue # Text oder leere Felder ignorieren
+                        # Wenn hier Text wie "K1" oder "Deck 1" steht, wird es ignoriert
+                        continue
 
-    # Fair-Trade Matching (Jeder nur 1x geben)
+    # Matching: Jeder darf nur 1x geben und 1x nehmen
     final_deals = []
     hat_gegeben = set()
     hat_bekommen = set()
@@ -56,6 +58,7 @@ try:
         for g in gebot:
             if g["von"] in hat_gegeben: continue
             
+            # Match finden (darf sich nicht selbst beschenken)
             if b["karte"] == g["karte"] and b["an"] != g["von"]:
                 final_deals.append(f"✅ {g['von']} ➔ {b['an']} ({g['karte']})")
                 hat_gegeben.add(g["von"])
@@ -63,11 +66,12 @@ try:
                 break
 
     if final_deals:
-        st.header(f"📋 Bestätigte Täusche ({len(final_deals)})")
+        st.header(f"📋 {len(final_deals)} Korrekte Tausch-Vorschläge")
+        # Sortierung nach Deck-Nummer für bessere Übersicht
         for deal in sorted(final_deals, key=lambda x: x.split('(')[1]):
             st.success(deal)
     else:
-        st.warning("Keine sicheren Tausch-Paare gefunden. Bitte prüfe, ob die Nullen in der Tabelle richtig gesetzt sind.")
+        st.warning("Keine eindeutigen Täusche gefunden. Bitte prüfe, ob die 0er und 2er korrekt eingetragen sind.")
 
 except Exception as e:
-    st.error(f"Technischer Fehler: {e}")
+    st.error(f"Fehler: {e}")
