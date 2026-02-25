@@ -1,6 +1,6 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
-import pandas as pd
+import pandas as pd 
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="The Gang - Karten Manager", layout="wide")
