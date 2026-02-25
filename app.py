@@ -2,65 +2,78 @@ import streamlit as st
 import pandas as pd
 import time
 
-st.set_page_config(page_title="The Gang - Final Fix", layout="wide")
-st.title("🏆 The Gang: Echtzeit-Tausch (Cache-Safe)")
+st.set_page_config(page_title="The Gang - Finaler Neustart", layout="wide")
+st.title("🛡️ The Gang: Intelligenter Karten-Scanner")
 
-# Wir hängen einen Zeitstempel an die URL, damit Google/Streamlit nicht schummeln können
+# Cache-Umgehung
 SHEET_ID = "1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo"
 DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&v={int(time.time())}"
 
 try:
-    # Wir laden die Daten OHNE Cache
-    df = pd.read_csv(DATA_URL, header=None).iloc[4:]
+    # Wir laden die gesamte Tabelle
+    full_df = pd.read_csv(DATA_URL, header=None)
     
+    # Zeile 4 (Index 3) enthält deine "K1, K2..." Marker
+    header_row = full_df.iloc[3]
+    # Daten ab Zeile 5 (Index 4) sind die Spieler
+    player_data = full_df.iloc[4:]
+
     gebot = []
     bedarf = []
 
-    for _, row in df.iterrows():
+    for _, row in player_data.iterrows():
         spieler = str(row.iloc[0]).strip()
         if spieler.lower() in ["nan", "", "name"]: continue
 
-        # SCAN-LOGIK: 9 Spalten pro Deck, Name nur in Spalte A
-        for d_nr in range(1, 16):
-            start_index = 1 + (d_nr - 1) * 9
+        # Wir prüfen JEDE Spalte einzeln
+        current_deck = 1
+        k_count_in_deck = 0
+
+        for col_idx in range(1, len(row)):
+            col_label = str(header_row.iloc[col_idx]).strip()
             
-            for k_nr in range(1, 10):
-                current_col = start_index + k_nr - 1
-                if current_col < len(row):
-                    val = row.iloc[current_col]
-                    try:
-                        anzahl = int(float(str(val).strip()))
-                        label = f"D{d_nr}-K{k_nr}"
-                        
-                        if anzahl >= 2:
-                            gebot.append({"von": spieler, "karte": label})
-                        elif anzahl == 0:
-                            # Wir prüfen, ob der Spieler wirklich 0 hat
-                            bedarf.append({"an": spieler, "karte": label})
-                    except:
-                        continue
+            # Nur wenn in der Kopfzeile "K" vorkommt, ist es eine Karte
+            if "K" in col_label:
+                k_count_in_deck += 1
+                if k_count_in_deck > 9:
+                    current_deck += 1
+                    k_count_in_deck = 1
+                
+                val = row.iloc[col_idx]
+                try:
+                    anzahl = int(float(str(val).strip()))
+                    karte_name = f"D{current_deck}-{col_label}"
+                    
+                    if anzahl >= 2:
+                        gebot.append({"spieler": spieler, "karte": karte_name})
+                    elif anzahl == 0:
+                        # Bedarf nur bei ECHTER Null
+                        bedarf.append({"spieler": spieler, "karte": karte_name})
+                except:
+                    continue
 
-    # Matching
+    # Matching-Logik (Wer kann wem helfen?)
+    st.header("📋 Optimierte Tausch-Vorschläge")
     final_deals = []
-    hat_gegeben = set()
-    hat_bekommen = set()
+    geber_belegt = set()
+    nehmer_belegt = set()
 
+    # Wir sortieren nach Decks, um die Übersicht zu behalten
     for b in bedarf:
-        if b["an"] in hat_bekommen: continue
+        if b["spieler"] in nehmer_belegt: continue
         for g in gebot:
-            if g["von"] in hat_gegeben: continue
-            if b["karte"] == g["karte"] and b["an"] != g["von"]:
-                final_deals.append(f"🤝 {g['von']} gibt {g['karte']} an {b['an']}")
-                hat_gegeben.add(g["von"])
-                hat_bekommen.add(b["an"])
+            if g["spieler"] in geber_belegt: continue
+            if b["karte"] == g["karte"] and b["spieler"] != g["spieler"]:
+                final_deals.append(f"✅ **{g['spieler']}** ➔ **{b['spieler']}** ({g['karte']})")
+                geber_belegt.add(g["spieler"])
+                nehmer_belegt.add(b["spieler"])
                 break
 
     if final_deals:
-        st.header(f"📋 {len(final_deals)} Aktuelle Tausch-Deals")
-        for deal in sorted(final_deals):
+        for deal in sorted(final_deals, key=lambda x: x.split('(')[1]):
             st.success(deal)
     else:
-        st.info("Keine Tausche gefunden. Stelle sicher, dass in deiner Tabelle Nullen für fehlende Karten stehen!")
+        st.info("Keine Tausche gefunden. Stelle sicher, dass Nullen (brauche) und Zahlen >= 2 (doppelt) eingetragen sind!")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
