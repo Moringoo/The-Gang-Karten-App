@@ -1,79 +1,72 @@
 import streamlit as st
 import pandas as pd
-import time
+import io
 
-st.set_page_config(page_title="The Gang - Finaler Neustart", layout="wide")
-st.title("🛡️ The Gang: Intelligenter Karten-Scanner")
+st.set_page_config(page_title="The Gang - Manual Sync", layout="wide")
 
-# Cache-Umgehung
-SHEET_ID = "1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo"
-DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&v={int(time.time())}"
+st.title("🃏 The Gang: Manueller Daten-Abgleich")
+st.info("Kopiere deine Tabelle in Google Sheets (von Troy bis zum letzten Spieler) und füge sie unten ein.")
 
-try:
-    # Wir laden die gesamte Tabelle
-    full_df = pd.read_csv(DATA_URL, header=None)
-    
-    # Zeile 4 (Index 3) enthält deine "K1, K2..." Marker
-    header_row = full_df.iloc[3]
-    # Daten ab Zeile 5 (Index 4) sind die Spieler
-    player_data = full_df.iloc[4:]
+# Das Textfeld für deine Daten
+raw_data = st.text_area("Hier die Tabellen-Daten einfügen (Strg+V):", height=300)
 
-    gebot = []
-    bedarf = []
+if raw_data:
+    try:
+        # Wir lesen die Daten direkt aus dem Textfeld (Tab-getrennt beim Kopieren aus Excel/Sheets)
+        df = pd.read_csv(io.StringIO(raw_data), sep='\t', header=None)
+        
+        gebot = []
+        bedarf = []
 
-    for _, row in player_data.iterrows():
-        spieler = str(row.iloc[0]).strip()
-        if spieler.lower() in ["nan", "", "name"]: continue
+        for _, row in df.iterrows():
+            # Spalte 0 ist der Name
+            spieler = str(row.iloc[0]).strip()
+            if spieler.lower() in ["nan", ""]: continue
 
-        # Wir prüfen JEDE Spalte einzeln
-        current_deck = 1
-        k_count_in_deck = 0
-
-        for col_idx in range(1, len(row)):
-            col_label = str(header_row.iloc[col_idx]).strip()
-            
-            # Nur wenn in der Kopfzeile "K" vorkommt, ist es eine Karte
-            if "K" in col_label:
-                k_count_in_deck += 1
-                if k_count_in_deck > 9:
-                    current_deck += 1
-                    k_count_in_deck = 1
+            # Wir scannen die Karten-Spalten (1 bis 9 für Deck 1, 10 bis 18 für Deck 2...)
+            # Wir gehen davon aus, dass beim Kopieren keine leeren Spalten mitkommen
+            for i in range(1, len(row)):
+                val = row.iloc[i]
+                if pd.isna(val) or str(val).strip() == "":
+                    continue
                 
-                val = row.iloc[col_idx]
                 try:
-                    anzahl = int(float(str(val).strip()))
-                    karte_name = f"D{current_deck}-{col_label}"
+                    anzahl = int(float(str(val).replace(',', '.')))
+                    deck_nr = (i - 1) // 9 + 1
+                    karten_nr = (i - 1) % 9 + 1
+                    label = f"Deck {deck_nr}-K{karten_nr}"
                     
                     if anzahl >= 2:
-                        gebot.append({"spieler": spieler, "karte": karte_name})
+                        gebot.append({"spieler": spieler, "karte": label})
                     elif anzahl == 0:
-                        # Bedarf nur bei ECHTER Null
-                        bedarf.append({"spieler": spieler, "karte": karte_name})
+                        # Echte Null = Sucht Karte
+                        bedarf.append({"spieler": spieler, "karte": label})
                 except:
                     continue
 
-    # Matching-Logik (Wer kann wem helfen?)
-    st.header("📋 Optimierte Tausch-Vorschläge")
-    final_deals = []
-    geber_belegt = set()
-    nehmer_belegt = set()
+        # Matching Logik
+        st.subheader("📋 Deine persönlichen Tausch-Vorschläge")
+        final_matches = []
+        beschaeftigt = set()
 
-    # Wir sortieren nach Decks, um die Übersicht zu behalten
-    for b in bedarf:
-        if b["spieler"] in nehmer_belegt: continue
-        for g in gebot:
-            if g["spieler"] in geber_belegt: continue
-            if b["karte"] == g["karte"] and b["spieler"] != g["spieler"]:
-                final_deals.append(f"✅ **{g['spieler']}** ➔ **{b['spieler']}** ({g['karte']})")
-                geber_belegt.add(g["spieler"])
-                nehmer_belegt.add(b["spieler"])
-                break
+        for b in bedarf:
+            if b["spieler"] in beschaeftigt: continue
+            for g in gebot:
+                if g["spieler"] in beschaeftigt: continue
+                
+                if b["karte"] == g["karte"] and b["spieler"] != g["spieler"]:
+                    final_matches.append(f"✅ **{g['spieler']}** gibt **{g['karte']}** an **{b['spieler']}**")
+                    beschaeftigt.add(g["spieler"])
+                    beschaeftigt.add(b["spieler"])
+                    break
 
-    if final_deals:
-        for deal in sorted(final_deals, key=lambda x: x.split('(')[1]):
-            st.success(deal)
-    else:
-        st.info("Keine Tausche gefunden. Stelle sicher, dass Nullen (brauche) und Zahlen >= 2 (doppelt) eingetragen sind!")
+        if final_matches:
+            for m in sorted(final_matches):
+                st.success(m)
+        else:
+            st.warning("Keine Übereinstimmungen gefunden. Prüfe, ob die Nullen und 2er korrekt kopiert wurden.")
 
-except Exception as e:
-    st.error(f"Fehler: {e}")
+    except Exception as e:
+        st.error(f"Fehler beim Verarbeiten der Daten: {e}")
+else:
+    st.write("Warte auf Daten... Markiere in Google Sheets einfach den Bereich mit den Namen und Zahlen und füge ihn hier ein.")
