@@ -1,50 +1,52 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="The Gang - Präzisions-Scan", layout="wide")
-st.title("🚀 The Gang: Alle Decks (Präzisions-Scan)")
+st.set_page_config(page_title="The Gang - Final Fix", layout="wide")
+st.title("🛡️ The Gang: Fehlerfreier Tausch-Rechner")
 
 SHEET_ID = "1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo"
 DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
-def get_clean_val(val):
-    try:
-        if pd.isna(val) or str(val).strip() == "": return 0
-        return int(float(str(val).strip()))
-    except:
-        return 0
-
 try:
-    # Wir laden die Tabelle ohne automatische Überschriften
-    df = pd.read_csv(DATA_URL, header=None)
+    # Wir laden diesmal MIT Header ab Zeile 4 (wo K1, K2 steht)
+    df = pd.read_csv(DATA_URL, header=3) 
     
     gebot = []
     bedarf = []
 
-    # Wir scannen alle Spieler ab Zeile 5 (Index 4) bis Zeile 24 (Paul)
-    for idx in range(4, len(df)):
-        row = df.iloc[idx]
+    # Wir gehen durch alle Spieler (Troy bis Paul)
+    for idx, row in df.iterrows():
         spieler = str(row.iloc[0]).strip()
-        if spieler.lower() in ["nan", "", "name"]: continue
-
-        # Wir gehen durch alle 15 Decks
-        # Jedes Deck-Paket ist 10 Spalten breit (9 Karten + 1 Name)
+        # Abbruch wenn wir am Ende der Liste sind
+        if spieler.lower() in ["nan", "", "name", "unnamed"]: continue
+        
+        # Scan durch 15 Decks
         for d_nr in range(1, 16):
-            # Start-Spalte berechnen: Deck 1 = 1 (B), Deck 2 = 11 (L), Deck 3 = 21 (V)
-            start_col = 1 + (d_nr - 1) * 10
+            # Start-Spalte: Deck 1 = 1, Deck 2 = 11, Deck 3 = 21...
+            start_idx = 1 + (d_nr - 1) * 10
             
-            for i in range(9): # Die 9 Karten pro Deck
-                col_idx = start_col + i
-                if col_idx < len(row):
-                    anzahl = get_clean_val(row.iloc[col_idx])
-                    label = f"Deck {d_nr}-K{i+1}"
+            for k_idx in range(9):
+                col = start_idx + k_idx
+                if col < len(row):
+                    val = row.iloc[col]
                     
-                    if anzahl >= 2:
-                        gebot.append({"von": spieler, "karte": label})
-                    elif anzahl == 0:
-                        bedarf.append({"an": spieler, "karte": label})
+                    # STRENGE PRÜFUNG:
+                    # Nur wenn eine ECHTE 0 drinsteht, wird Bedarf angemeldet
+                    # Nur wenn eine ECHTE Zahl >= 2 drinsteht, wird Gebot angemeldet
+                    try:
+                        anzahl = int(float(val))
+                        karte_name = f"Deck {d_nr}-K{k_idx+1}"
+                        
+                        if anzahl >= 2:
+                            gebot.append({"von": spieler, "karte": karte_name})
+                        elif anzahl == 0:
+                            # Wir prüfen hier nochmal, ob das Feld nicht einfach leer war
+                            if pd.notna(val):
+                                bedarf.append({"an": spieler, "karte": karte_name})
+                    except:
+                        continue # Text oder leere Felder ignorieren
 
-    # Matching (Jeder Spieler darf nur 1x geben)
+    # Fair-Trade Matching (Jeder nur 1x geben)
     final_deals = []
     hat_gegeben = set()
     hat_bekommen = set()
@@ -61,12 +63,11 @@ try:
                 break
 
     if final_deals:
-        st.header(f"📋 {len(final_deals)} Tausch-Vorschläge gefunden")
-        # Sortiert anzeigen (Deck 1, dann Deck 2...)
+        st.header(f"📋 Bestätigte Täusche ({len(final_deals)})")
         for deal in sorted(final_deals, key=lambda x: x.split('(')[1]):
             st.success(deal)
     else:
-        st.warning("Keine Übereinstimmungen gefunden. Prüfe, ob in Deck 2 oder 3 irgendwo eine '2' und eine '0' bei der gleichen Karte stehen!")
+        st.warning("Keine sicheren Tausch-Paare gefunden. Bitte prüfe, ob die Nullen in der Tabelle richtig gesetzt sind.")
 
 except Exception as e:
-    st.error(f"Fehler: {e}")
+    st.error(f"Technischer Fehler: {e}")
