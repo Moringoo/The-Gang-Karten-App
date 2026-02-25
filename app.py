@@ -1,54 +1,48 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="The Gang - Finaler Fix", layout="wide")
-st.title("🛡️ The Gang: Präzisions-Tausch")
+st.set_page_config(page_title="The Gang - 15 Deck Scan", layout="wide")
+st.title("🏆 The Gang: Master-Tausch-Rechner (Alle Decks)")
 
 SHEET_ID = "1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo"
 DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 try:
-    # Wir laden die Tabelle komplett ohne Header-Logik
-    df = pd.read_csv(DATA_URL, header=None)
+    # Wir laden die Tabelle ab Zeile 5 (wo Troy steht)
+    # header=None sorgt dafür, dass wir die Spalten stur als Zahlen (0, 1, 2...) ansprechen
+    df = pd.read_csv(DATA_URL, header=None).iloc[4:]
     
     gebot = []
     bedarf = []
 
-    # Wir scannen exakt ab Zeile 5 (Index 4 in Python)
-    # Das ist die Zeile, in der 'Troy' steht
-    for idx in range(4, len(df)):
-        row = df.iloc[idx]
+    for _, row in df.iterrows():
         spieler = str(row.iloc[0]).strip()
-        
-        # Sicherheits-Check für den Namen
-        if spieler.lower() in ["nan", "", "name", "unnamed: 0"]: continue
+        if spieler.lower() in ["nan", "", "name", "unnamed"]: continue
 
-        # Wir gehen durch 15 Decks
-        for d_nr in range(1, 16):
-            # Start-Spalte: B=1, L=11, V=21...
-            start_col = 1 + (d_nr - 1) * 10
-            
-            for k_idx in range(9):
-                col_idx = start_col + k_idx
-                if col_idx < len(row):
-                    val = row.iloc[col_idx]
-                    
-                    # Nur verarbeiten, wenn es eine echte Zahl ist
+        # Wir scannen Karten von Spalte 1 (B) bis 135 (Ende von Deck 15)
+        for total_idx in range(1, 136):
+            if total_idx < len(row):
+                val = row.iloc[total_idx]
+                
+                # Nur verarbeiten, wenn das Feld nicht leer ist
+                if pd.notna(val) and str(val).strip() != "":
                     try:
-                        # Wir wandeln in Float und dann Int um, um Fehler zu vermeiden
-                        anzahl = int(float(str(val).replace(',', '.')))
-                        karte_label = f"D{d_nr}-K{k_idx+1}"
+                        anzahl = int(float(str(val).strip()))
                         
-                        # Johny-Schutz: Nur bei ECHTER Null ist Bedarf
-                        if anzahl == 0:
-                            bedarf.append({"an": spieler, "karte": karte_label})
-                        elif anzahl >= 2:
-                            gebot.append({"von": spieler, "karte": karte_label})
+                        # Berechnung: Welches Deck und welche Karte ist das?
+                        deck_nr = (total_idx - 1) // 9 + 1
+                        karte_nr = (total_idx - 1) % 9 + 1
+                        label = f"Deck {deck_nr}-K{karte_nr}"
+                        
+                        if anzahl >= 2:
+                            gebot.append({"von": spieler, "karte": label})
+                        elif anzahl == 0:
+                            # Bedarf nur, wenn wirklich eine 0 drinsteht
+                            bedarf.append({"an": spieler, "karte": label})
                     except:
-                        # Wenn hier Text wie "K1" oder "Deck 1" steht, wird es ignoriert
                         continue
 
-    # Matching: Jeder darf nur 1x geben und 1x nehmen
+    # Matching Logik
     final_deals = []
     hat_gegeben = set()
     hat_bekommen = set()
@@ -58,7 +52,6 @@ try:
         for g in gebot:
             if g["von"] in hat_gegeben: continue
             
-            # Match finden (darf sich nicht selbst beschenken)
             if b["karte"] == g["karte"] and b["an"] != g["von"]:
                 final_deals.append(f"✅ {g['von']} ➔ {b['an']} ({g['karte']})")
                 hat_gegeben.add(g["von"])
@@ -66,12 +59,17 @@ try:
                 break
 
     if final_deals:
-        st.header(f"📋 {len(final_deals)} Korrekte Tausch-Vorschläge")
-        # Sortierung nach Deck-Nummer für bessere Übersicht
+        st.header(f"📋 {len(final_deals)} Tausch-Vorschläge")
+        # Sortiert nach Deck-Nummer anzeigen
         for deal in sorted(final_deals, key=lambda x: x.split('(')[1]):
             st.success(deal)
+        
+        st.divider()
+        st.subheader("📲 WhatsApp Text")
+        wa_text = "*Heutige Gang-Tauschliste:*\n\n" + "\n".join(final_deals)
+        st.code(wa_text)
     else:
-        st.warning("Keine eindeutigen Täusche gefunden. Bitte prüfe, ob die 0er und 2er korrekt eingetragen sind.")
+        st.info("Keine passenden Täusche gefunden. Stell sicher, dass Nullen für fehlende Karten eingetragen sind!")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
