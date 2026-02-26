@@ -14,57 +14,50 @@ try:
     df_raw = load_data()
     spieler_daten = {}
 
-    # Wir definieren die Spalten, in denen die Namen stehen (A, L, V, AF, AP, AZ, BJ, BT, CD, CN, CX)
-    # Das sind die Spalten 0, 11, 21, 31, 41, 51, 61, 71, 81, 91, 101...
-    namens_spalten_indices = [idx for idx in range(0, len(df_raw.columns), 10 if idx == 0 else 10)]
-
-    for col_idx in range(len(df_raw.columns)):
-        # Überspringe Spalten, die Namen enthalten
-        if col_idx % 10 == 0: continue
-        
-        # Finde den zugehörigen Namen aus der Namensspalte links von diesem Block
-        start_name_col = (col_idx // 10) * 10
-        
-        # Deck-Label aus den ersten 3 Zeilen suchen
-        deck_label = ""
-        for r in range(3):
-            val = str(df_raw.iloc[r, col_idx]).strip()
-            if "Deck" in val:
-                deck_label = val
-                break
-        
-        # Falls Deck-Label in der Spalte fehlt, nimm das von links (für K2-K9)
-        if not deck_label:
-            for back in range(col_idx, start_name_col, -1):
-                for r in range(3):
-                    check_v = str(df_raw.iloc[r, back]).strip()
-                    if "Deck" in check_v:
-                        deck_label = check_v
-                        break
-                if deck_label: break
-
-        karte_label = str(df_raw.iloc[3, col_idx]).strip()
-        full_card_key = f"{deck_label}-{karte_label}"
-
-        # Jetzt für jeden der 20 Spieler die Zahl in dieser Spalte holen
-        for row_idx in range(4, 25): # Scannt die ersten 20 Spielerzeilen
-            name = str(df_raw.iloc[row_idx, start_name_col]).strip()
+    # Wir scannen alle Spaltenblöcke (A, L, V, AF...)
+    # Blöcke starten alle 11 Spalten (1 Name, 9 Karten, 1 Leer)
+    for block_start in range(0, len(df_raw.columns), 11):
+        # Scan der 20 Spielerzeilen (ab Zeile 5 / Index 4)
+        for row_idx in range(4, 25):
+            if row_idx >= len(df_raw): break
+            
+            name = str(df_raw.iloc[row_idx, block_start]).strip()
             if name in ["nan", "", "None", "Name"]: continue
             
-            if name not in spieler_daten: spieler_daten[name] = {}
+            if name not in spieler_daten:
+                spieler_daten[name] = {}
             
-            try:
-                wert_raw = str(df_raw.iloc[row_idx, col_idx]).strip()
-                if wert_raw not in ["nan", ""]:
-                    anzahl = int(float(wert_raw.replace(',', '.')))
-                    spieler_daten[name][full_card_key] = anzahl
-            except: continue
+            # Die 9 Karten nach dem Namen einsammeln
+            for k_offset in range(1, 10):
+                col_idx = block_start + k_offset
+                if col_idx >= len(df_raw.columns): break
+                
+                # Deck-Name aus Kopfzeile extrahieren
+                deck_label = ""
+                for r in range(4):
+                    v = str(df_raw.iloc[r, col_idx]).strip()
+                    if "Deck" in v:
+                        deck_label = v
+                        break
+                
+                if not deck_label: continue # Falls kein Deck gefunden
+                
+                karte_label = str(df_raw.iloc[3, col_idx]).strip()
+                full_card = f"{deck_label}-{karte_label}"
+                
+                try:
+                    wert = str(df_raw.iloc[row_idx, col_idx]).strip()
+                    if wert not in ["nan", ""]:
+                        anzahl = int(float(wert.replace(',', '.')))
+                        # Wir speichern den Wert (bzw. addieren, falls er doppelt auftaucht)
+                        spieler_daten[name][full_card] = anzahl
+                except: continue
 
-    # Graue Karten (Diamanten) basierend auf deinen Screenshots
+    # Hier definieren wir, was als Diamant zählt (graue Felder)
     DIAMANT_LISTE = [
         "Deck 4-K6", "Deck 4-K7", "Deck 4-K8", "Deck 4-K9",
         "Deck 5-K9", "Deck 6-K8", "Deck 6-K9",
-        "Deck 13-K8", "Deck 13-K9", "Deck 14-K8", "Deck 14-K9" # Beispielhaft erweitert
+        "Deck 13-K8", "Deck 13-K9", "Deck 14-K8", "Deck 14-K9"
     ]
 
     gebot, bedarf = [], []
@@ -94,12 +87,15 @@ try:
 
     t1, t2 = st.tabs(["🌕 Gold-Deals", "💎 Diamant-Deals"])
     with t1:
-        for m in match_engine("gold"): st.success(m)
+        g_res = match_engine("gold")
+        if g_res:
+            for m in g_res: st.success(m)
+        else: st.info("Keine Gold-Matches gefunden.")
     with t2:
         d_res = match_engine("dia")
         if d_res:
             for m in d_res: st.info(m)
-        else: st.warning("Keine Diamant-Matches gefunden.")
+        else: st.warning("Keine Diamant-Matches. Trag '0' und '2' in die grauen Felder ein!")
 
 except Exception as e:
-    st.error(f"Fehler: {e}")
+    st.error(f"Fehler im System: {e}")
