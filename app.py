@@ -29,7 +29,6 @@ st.title("🛡️ THE GANG: HAUPTQUARTIER")
 # --- BEREICH 1: KARTEN-EINGABE ---
 st.markdown("### 📝 MEINE KARTEN AKTUALISIEREN")
 
-# Daten laden
 try:
     df_raw = pd.read_csv(SHEET_URL)
     spieler_namen = df_raw.iloc[:, 0].dropna().unique().tolist()
@@ -42,21 +41,19 @@ try:
     
     st.write(f"Werte für Deck {deck_sel}:")
     
-    # 3x3 Raster für Handy
-    r1_cols = st.columns(3)
-    r2_cols = st.columns(3)
-    r3_cols = st.columns(3)
-    grids = r1_cols + r2_cols + r3_cols
+    # 3x3 Raster
+    r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
+    alle_grids = r1 + r2 + r3
     
     neue_werte = []
     for i in range(9):
-        with grids[i]:
-            val = st.number_input(f"K{i+1}", 0, 9, key=f"k{i}", step=1)
-            neue_werte.append(str(int(val)))
-            
+        with alle_grids[i]:
+            v = st.number_input(f"K{i+1}", 0, 9, key=f"k{i}", step=1)
+            neue_werte.append(str(int(v)))
+    
     if st.button("🚀 DATEN SPEICHERN"):
         if name_sel == "Bitte wählen...":
-            st.warning("Wähle deinen Namen!")
+            st.warning("Bitte wähle zuerst deinen Namen!")
         else:
             with st.spinner("Sende Daten..."):
                 try:
@@ -65,12 +62,11 @@ try:
                         st.success("Erfolgreich gespeichert!")
                         st.balloons()
                     else:
-                        st.error(f"Server-Antwort: {res.text}")
+                        st.error(f"Fehler: {res.text}")
                 except:
-                    st.error("Verbindung zum Google Sheet fehlgeschlagen.")
-
+                    st.error("Verbindung zum Sheet fehlgeschlagen.")
 except Exception as e:
-    st.error(f"Fehler beim Laden: {e}")
+    st.error(f"Ladefehler: {e}")
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
@@ -83,8 +79,6 @@ if pw_input == ADMIN_PASSWORT:
     try:
         df = pd.read_csv(SHEET_URL)
         karten_cols = df.columns[1:]
-        
-        # Decks sortieren
         decks = {}
         for col in karten_cols:
             d_name = col.split('-')[0]
@@ -118,20 +112,18 @@ if pw_input == ADMIN_PASSWORT:
                             break
             return results
 
-        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
-        with t1:
+        t_g, t_d = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
+        with t_g:
             m_g = get_matches(False)
             if m_g:
                 for match in m_g: st.success(match)
             else: st.write("Keine Gold-Matches.")
-            
-        with t2:
+        with t_d:
             m_d = get_matches(True)
             if m_d:
                 for match in m_d: st.info(match)
             else: st.write("Keine Diamant-Matches.")
-            
     except Exception as e:
         st.error(f"Analyse-Fehler: {e}")
 elif pw_input != "":
-    st.error("Falsches Passwort.")
+    st.error("Falscher Code!")
