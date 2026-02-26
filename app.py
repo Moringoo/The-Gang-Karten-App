@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 
-# --- 1. SETUP (ICON & TITEL FÜR DEN BROWSER-TAB) ---
+# --- 1. SETUP ---
 st.set_page_config(
     page_title="The Gang HQ", 
     page_icon="🛡️", 
@@ -10,13 +10,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. KONFIGURATION (DEINE LINKS & PASSWORT) ---
+# --- 2. KONFIGURATION ---
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 GID = "2025591169"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
 ADMIN_PASSWORT = "gang2026" 
 
-# --- 3. THE GANG DESIGN (DARK MODE & GOLD) ---
+# --- 3. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
@@ -28,9 +28,8 @@ st.markdown("""
 
 st.title("🛡️ THE GANG: HAUPTQUARTIER")
 
-# --- BEREICH 1: KARTEN-EINGABE (FÜR ALLE SPIELER) ---
+# --- BEREICH 1: KARTEN-EINGABE ---
 st.markdown("### 📝 MEINE KARTEN AKTUALISIEREN")
-st.caption("Trage hier deine aktuellen Bestände ein. 0=Suche, 1=Besitze, 2=Doppelt.")
 
 try:
     df_raw = pd.read_csv(SHEET_URL)
@@ -42,7 +41,7 @@ try:
     with col_b:
         deck_sel = st.selectbox("Welches Deck?", list(range(1, 16)))
     
-    # 3x3 Raster für Handy-Optimierung
+    # Das 3x3 Raster
     r1 = st.columns(3)
     r2 = st.columns(3)
     r3 = st.columns(3)
@@ -73,7 +72,7 @@ except Exception as e:
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-# --- BEREICH 2: ADMIN-TRESOR (NUR FÜR DICH) ---
+# --- BEREICH 2: ADMIN-TRESOR ---
 st.markdown("### 🕵️‍♂️ ADMIN-BEREICH (TAUSCH-ANALYSE)")
 pw_input = st.text_input("Sicherheits-Code für Tauschvorschläge", type="password", placeholder="Nur für den Administrator...")
 
@@ -104,18 +103,24 @@ if pw_input == ADMIN_PASSWORT:
         bedarf_prio = sorted(bedarf_prio, key=lambda x: x['f'], reverse=True)
 
         def get_matches(is_dia):
-            res, weg = [], set()
+            matches_list, weg = [], set()
             for b in bedarf_prio:
                 if (("(D)" in b["k"]) == is_dia):
                     for g in gebot:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
                             label = "🔥 FINISHER!" if b['f'] == 8 else f"({b['f']}/9)"
-                            res.append(f"{label} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
+                            matches_list.append(f"{label} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
                             weg.add(g["s"])
                             break
-            return res
+            return matches_list
 
         t_gold, t_dia = st.tabs(["🌕 GOLD DEALS", "💎 DIAMANT DEALS"])
         with t_gold:
             m_g = get_matches(False)
             if m_g:
+                for match_item in m_g:
+                    st.success(match_item)
+            else:
+                st.write("Keine Gold-Matches.")
+        with t_dia:
+            m_d = get_matches(True)
