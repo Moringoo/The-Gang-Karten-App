@@ -1,82 +1,89 @@
 import streamlit as st
-import re
+import pandas as pd
 
-# Design-Anpassung: Dark Mode für "The Gang"
-st.set_page_config(page_title="The Gang: Kartell-Börse", layout="wide")
+st.set_page_config(page_title="The Gang: Live-Terminal", layout="wide")
 
+# Google Sheet ID (aus deiner URL)
+SHEET_ID = "1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo"
+URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+
+# --- DESIGN ---
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; color: #ffffff; }
-    .stRadio > div { background-color: #1a1c23; padding: 10px; border-radius: 10px; }
-    .stTextArea textarea { background-color: #1a1c23 !important; color: #00ff00 !important; }
+    .stApp { background-color: #0e1117; color: white; }
+    .stSelectbox label, .stNumberInput label { color: #00ff00 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ The Gang: Kartell-Tauschbörse")
-st.write("---")
+st.title("🛡️ The Gang: Live-Tausch & Self-Service")
 
-# Auswahl oben: Gold oder Diamant
-modus = st.radio("Was willst du heute tauschen?", ["🌕 Gold-Karten", "💎 Diamant-Karten"], horizontal=True)
+# --- DATEN LADEN ---
+@st.cache_data(ttl=60) # Lädt alle 60 Sekunden neu
+def load_data():
+    # Wir laden die Tabelle (Namen in Spalte A)
+    df = pd.read_csv(URL, header=None).iloc[4:]
+    df.columns = ['Name'] + [f'K{i}' for i in range(1, len(df.columns))]
+    return df
 
-st.subheader("📋 Daten aus Google Sheets einfügen")
-all_data = st.text_area("Kopiere hier alle Spieler-Zeilen rein:", height=250, placeholder="Troy 1 2 0 1...\nJens 2 0 1 1...")
+try:
+    df = load_data()
+    spieler_liste = df['Name'].dropna().unique().tolist()
 
-if all_data:
-    lines = all_data.strip().split('\n')
-    gebot = []
-    bedarf = []
-    
-    prefix = "Gold" if "Gold" in modus else "Diamant"
+    # --- SELF-SERVICE BEREICH ---
+    with st.sidebar:
+        st.header("👤 Dein Update")
+        user = st.selectbox("Wer bist du?", ["Gast"] + spieler_liste)
+        if user != "Gast":
+            st.info(f"Hi {user}, was hast du Neues?")
+            typ = st.radio("Karten-Typ:", ["Gold", "Diamant"])
+            d_nr = st.number_input("Deck Nr:", min_value=1, max_value=25, value=1)
+            k_nr = st.number_input("Karte Nr:", min_value=1, max_value=9, value=1)
+            anzahl = st.selectbox("Anzahl:", [0, 1, 2], index=1, help="0=Suche, 1=Habe, 2=Doppelt")
+            
+            if st.button("Update vormerken"):
+                st.success(f"Vorgemerkt: {typ} D{d_nr}-K{k_nr} auf {anzahl}")
 
-    for line in lines:
-        parts = line.split()
-        if len(parts) < 2: continue
-        spieler = parts[0]
-        # Wir fischen alle reinen Zahlen aus der Zeile
-        zahlen = re.findall(r'\b\d+\b', line)
+    # --- HAUPTBEREICH: AUTOMATISCHER SCAN ---
+    tab1, tab2 = st.tabs(["🌕 Gold-Tausch", "💎 Diamant-Tausch"])
+
+    def find_matches(start_col, end_col, prefix):
+        gebot, bedarf = [], []
+        for _, row in df.iterrows():
+            name = str(row['Name']).strip()
+            # Wir scannen den Bereich der Spalten (z.B. Gold 1-135)
+            for i in range(start_col, end_col + 1):
+                try:
+                    val = int(float(str(row.iloc[i]).strip()))
+                    label = f"{prefix} D{(i-1)//9 + 1}-K{(i-1)%9 + 1}"
+                    if val >= 2: gebot.append((name, label))
+                    elif val == 0: bedarf.append((name, label))
+                except: continue
         
-        for i, wert in enumerate(zahlen):
-            try:
-                anzahl = int(wert)
-                deck_nr = (i // 9) + 1
-                karte_nr = (i % 9) + 1
-                label = f"{prefix} D{deck_nr}-K{karte_nr}"
-                
-                if anzahl >= 2:
-                    gebot.append({"name": spieler, "karte": label})
-                elif anzahl == 0:
-                    # Echte 0 = Sucht die Karte
-                    bedarf.append({"name": spieler, "karte": label})
-            except:
-                continue
+        matches = []
+        used = set()
+        for b_name, b_k in bedarf:
+            if b_name in used: continue
+            for g_name, g_k in gebot:
+                if g_name in used: continue
+                if b_k == g_k and b_name != g_name:
+                    matches.append(f"🤝 **{g_name}** ➔ **{b_name}** ({g_k})")
+                    used.add(g_name); used.add(b_name)
+                    break
+        return matches
 
-    # Matching Logik
-    st.divider()
-    st.subheader(f"🔄 Aktuelle {modus} Deals")
-    
-    matches = []
-    used = set()
+    with tab1:
+        # Gold: Spalten 1 bis 135 (Annahme: Deck 1-15)
+        gold_matches = find_matches(1, 135, "Gold")
+        if gold_matches:
+            for m in gold_matches: st.success(m)
+        else: st.info("Keine Gold-Matches.")
 
-    for b in bedarf:
-        if b["name"] in used: continue
-        for g in gebot:
-            if g["name"] in used: continue
-            if b["karte"] == g["karte"] and b["name"] != g["name"]:
-                matches.append(f"🤝 *{g['name']}* ➔ *{b['name']}* ({g['karte']})")
-                used.add(g["name"])
-                used.add(b["name"])
-                break
+    with tab2:
+        # Diamant: Spalten 136 bis Ende (Annahme: Ab Deck 16)
+        diamant_matches = find_matches(136, len(df.columns)-1, "Diamant")
+        if diamant_matches:
+            for m in diamant_matches: st.info(m)
+        else: st.info("Keine Diamant-Matches.")
 
-    if matches:
-        wa_text = f"*Heutige Tauschliste ({modus})*:\n\n" + "\n".join(matches)
-        for m in matches:
-            st.success(m)
-        
-        st.divider()
-        st.subheader("📲 Text für WhatsApp")
-        st.code(wa_text) # Einfach klicken zum Kopieren
-    else:
-        st.info(f"Keine {modus} Matches gefunden. Prüfe, ob du die richtigen Spalten kopiert hast!")
-
-st.markdown("---")
-st.caption("Totenkopfgang XxL | Strategie-Tool v3.0")
+except Exception as e:
+    st.error(f"Verbindung zum Sheet fehlgeschlagen. Prüfe, ob es 'für jeden mit dem Link' freigegeben ist!")
