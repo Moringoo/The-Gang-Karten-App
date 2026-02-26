@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="The Gang: Multi-Match", layout="wide")
-st.title("🛡️ The Gang: Maximum Tausch-Power")
+st.set_page_config(page_title="The Gang: Deck Closer", layout="wide")
+st.title("🛡️ The Gang: Zielgeraden-Scanner")
 
 GID = "2025591169" 
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
@@ -14,12 +14,12 @@ def load_data():
 try:
     df = load_data()
     
-    # 1. Decks organisieren
+    # 1. Decks identifizieren
     decks = {}
     for col in df.columns[1:]:
-        deck_name = col.split('-')[0]
-        if deck_name not in decks: decks[deck_name] = []
-        decks[deck_name].append(col)
+        d_name = col.split('-')[0]
+        if d_name not in decks: decks[d_name] = []
+        decks[d_name].append(col)
 
     gebot = []
     bedarf_mit_prio = []
@@ -29,7 +29,7 @@ try:
         if name in ["nan", "None", ""]: continue
         
         for d_name, d_cols in decks.items():
-            # Wie viele Karten hat er in diesem Deck (Zahl > 0)
+            # Wie viele Karten hat der Spieler in diesem Deck (Zahl > 0)
             besitz_count = sum(1 for c in d_cols if pd.notna(row[c]) and int(float(str(row[c]).replace(',','.'))) > 0)
             
             for c in d_cols:
@@ -41,47 +41,48 @@ try:
                     if anz >= 2:
                         gebot.append({"spieler": name, "karte": c})
                     elif anz == 0:
-                        # Bedarf nur speichern, wenn Deck-Fortschritt > 1 (Schutz-Regel)
-                        if besitz_count > 1:
-                            bedarf_mit_prio.append({
-                                "spieler": name, 
-                                "karte": c, 
-                                "prio": besitz_count
-                            })
+                        # WICHTIG: Wir speichern JEDEN Bedarf, aber geben ihm den besitz_count mit
+                        # damit wir später nach "kurz vor Ende" sortieren können.
+                        bedarf_mit_prio.append({
+                            "spieler": name, 
+                            "karte": c, 
+                            "fortschritt": besitz_count
+                        })
                 except: continue
 
-    # Sortieren: Fast fertige Decks zuerst
-    bedarf_mit_prio = sorted(bedarf_mit_prio, key=lambda x: x['prio'], reverse=True)
+    # STRATEGIE-SORTIERUNG: Wer 8 Karten hat (8/9), kommt ganz nach oben!
+    # Danach 7/9, 6/9... wer nur 1 Karte hat, kommt ganz nach unten.
+    bedarf_mit_prio = sorted(bedarf_mit_prio, key=lambda x: x['fortschritt'], reverse=True)
 
     def match_engine(dia_mode):
         matches = []
-        sender_gesperrt = set() # Nur wer GESENDET hat, wird für weiteres Senden gesperrt
-        # Empfänger werden NICHT gesperrt -> können mehrere Karten bekommen
+        sender_gesperrt = set() # Jeder verschickt nur 1 Karte
         
         for b in bedarf_mit_prio:
             ist_dia = "(D)" in b["karte"]
             if ist_dia != dia_mode: continue
             
             for g in gebot:
-                # Regel 1: Sender darf noch nicht gesendet haben
-                # Regel 2: Man schickt sich keine Karten selbst
-                if g["spieler"] not in sender_gesperrt and g["spieler"] != b["spieler"]:
-                    if g["karte"] == b["karte"]:
-                        matches.append(f"📦 **{g['spieler']}** ➔ **{b['spieler']}** | {g['karte']} (Fortschritt: {b['prio']}/9)")
-                        sender_gesperrt.add(g["spieler"]) # Sender ist für diesen Scan fertig
-                        break # Nächsten Bedarf prüfen
+                # Prüfen: Sender noch frei? Nicht an sich selbst schicken? Karte identisch?
+                if g["spieler"] not in sender_gesperrt and g["spieler"] != b["spieler"] and g["karte"] == b["karte"]:
+                    
+                    prio_info = f"🔥 **FINISHER!** ({b['fortschritt']}/9)" if b['fortschritt'] == 8 else f"({b['fortschritt']}/9)"
+                    
+                    matches.append(f"{prio_info} | **{g['spieler']}** ➔ **{b['spieler']}** ({g['karte']})")
+                    
+                    # Sender sperren, Empfänger bleibt offen für weitere Karten
+                    sender_gesperrt.add(g["spieler"]) 
+                    break # Nächsten Bedarf in der Prio-Liste prüfen
         return matches
 
-    t1, t2 = st.tabs(["🌕 Gold-Deals (Maximal)", "💎 Diamant-Deals (Maximal)"])
+    t1, t2 = st.tabs(["🌕 Gold-Abschlüsse", "💎 Diamant-Abschlüsse"])
     with t1:
         res_g = match_engine(False)
         for m in res_g: st.success(m)
-        if not res_g: st.info("Keine Gold-Matches.")
             
     with t2:
         res_d = match_engine(True)
         for m in res_d: st.info(m)
-        if not res_d: st.warning("Keine Diamant-Matches.")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
