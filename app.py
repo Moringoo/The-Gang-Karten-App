@@ -27,9 +27,8 @@ st.markdown("""
 # --- LOGO & TITEL ---
 col_logo, col_titel = st.columns([1, 4])
 with col_logo:
-    # Hier wird ein Totenkopf angezeigt. 
-    # Wenn du ein eigenes Bild hast, lade es bei GitHub hoch und ändere den Link hier:
-    st.image("http://googleusercontent.com/image_collection/image_retrieval/16493445332081504338_0", width=100)
+    # Totenkopf-Icon
+    st.image("https://cdn-icons-png.flaticon.com/512/4232/4232454.png", width=100)
 
 with col_titel:
     st.title("THE GANG: HAUPTQUARTIER")
@@ -116,16 +115,33 @@ if pw_input == ADMIN_PASSWORT:
                         elif anz == 0: bedarf.append({"s": spieler, "k": c, "f": besitz})
                     except: continue
 
+        # Sortieren nach Fortschritt (höchster zuerst)
         bedarf = sorted(bedarf, key=lambda x: x['f'], reverse=True)
 
+        # INTELLIGENTE TAUSCH-LOGIK
         def get_matches(is_dia):
             results, weg = [], set()
+            # Temporärer Speicher, um Deck-Fortschritte während der Analyse hochzuzählen
+            temp_progress = {b['s'] + b['k'].split('-')[0]: b['f'] for b in bedarf}
+
             for b in bedarf:
+                deck_id = b['s'] + b['k'].split('-')[0]
                 if (("(D)" in b["k"]) == is_dia):
                     for g in gebot:
+                        # Nur tauschen, wenn Geber noch nicht verplant und nicht derselbe Spieler
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            prio = "🔥 FIN!" if b['f'] == 8 else f"({b['f']}/9)"
-                            results.append(f"{prio} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
+                            aktueller_stand = temp_progress.get(deck_id, b['f'])
+                            
+                            # Wenn er durch diesen Deal auf 9 Karten kommt -> FINISH!
+                            if aktueller_stand >= 8:
+                                label = "🔥 FINISHER!"
+                            else:
+                                label = f"({aktueller_stand}/9)"
+                            
+                            results.append(f"{label} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
+                            
+                            # Fortschritt im Kopf hochzählen für den nächsten Deal
+                            temp_progress[deck_id] = aktueller_stand + 1
                             weg.add(g["s"])
                             break
             return results
@@ -136,12 +152,4 @@ if pw_input == ADMIN_PASSWORT:
             if m_g:
                 for m in m_g: st.success(m)
             else: st.write("Keine Gold-Deals.")
-        with t_d:
-            m_d = get_matches(True)
-            if m_d:
-                for m in m_d: st.info(m)
-            else: st.write("Keine Diamant-Deals.")
-    except Exception as e:
-        st.error(f"Fehler: {e}")
-elif pw_input != "":
-    st.error("Falscher Code!")
+        with t
