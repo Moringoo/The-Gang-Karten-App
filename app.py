@@ -20,19 +20,19 @@ st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .stButton>button { background-color: #1f2937; color: #fbbf24; border: 1px solid #fbbf24; font-weight: bold; width: 100%; border-radius: 10px; }
+    .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 0; }
     hr { border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- LOGO & TITEL ---
+# Hier habe ich jetzt einen funktionierenden Link zu einem Totenkopf eingebaut!
 col_logo, col_titel = st.columns([1, 4])
 with col_logo:
-    # WICHTIG: Ersetze 'PFAD_ZU_DEINEM_BILD' durch den tatsächlichen Link zu deinem Totenkopf-Bild!
-    # Das Bild ist der Totenkopf mit gekreuzten Schwertern und Äxten sowie dem Text "TOTENKOPFGANG".
-    st.image("PFAD_ZU_DEINEM_BILD", width=120)
+    st.image("https://cdn-icons-png.flaticon.com/512/4232/4232454.png", width=100)
 
 with col_titel:
-    st.title("THE GANG: HAUPTQUARTIER")
+    st.markdown('<p class="main-title">THE GANG: HAUPTQUARTIER</p>', unsafe_allow_html=True)
     st.subheader("💀 TOTENKOPFGANG")
 
 # --- BEREICH 1: KARTEN-EINGABE ---
@@ -50,12 +50,14 @@ try:
     
     st.info(f"Eingabe für: **{name_sel}** | **Deck {deck_sel}**")
     
+    # 3x3 Raster
     r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
     alle_grids = r1 + r2 + r3
     
     neue_werte = []
     for i in range(9):
         with alle_grids[i]:
+            # Eindeutige Keys verhindern das Vermischen der Decks
             v = st.number_input(
                 f"K{i+1}", 0, 9, value=0, step=1, 
                 key=f"user_{name_sel}_deck_{deck_sel}_k{i}"
@@ -78,7 +80,7 @@ try:
                 except:
                     st.error("Verbindung zum Sheet fehlgeschlagen.")
 except Exception as e:
-    st.error(f"Ladefehler (Prüfe die SHEET_URL): {e}")
+    st.error(f"Ladefehler: {e}")
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
