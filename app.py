@@ -26,7 +26,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- HEADER ---
+# --- HEADER (Text-basiert für maximale Stabilität) ---
 st.markdown('<p class="main-title">THE GANG: HAUPTQUARTIER</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">💀 TOTENKOPFGANG 💀</p>', unsafe_allow_html=True)
 
@@ -70,14 +70,14 @@ try:
                         st.balloons()
                     else:
                         st.error(f"Fehler: {res.text}")
-                except:
+                except Exception:
                     st.error("Verbindung zum Sheet fehlgeschlagen.")
 except Exception as e:
     st.error(f"Fehler beim Laden: {e}")
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-# --- BEREICH 2: ADMIN-TRESOR ---
+# --- BEREICH 2: ADMIN-TRESOR (TAUSCH-ANALYSE) ---
 st.markdown("### 🕵️‍♂️ ADMIN-BEREICH (TAUSCH-ANALYSE)")
 pw_input = st.text_input("Sicherheits-Code", type="password")
 
@@ -90,34 +90,4 @@ if pw_input == ADMIN_PASSWORT:
         decks = {}
         for col in karten_cols:
             d_name = col.split('-')[0]
-            if d_name not in decks: decks[d_name] = []
-            decks[d_name].append(col)
-
-        gebot, bedarf = [], []
-        for _, row in df.iterrows():
-            spieler = str(row.iloc[0]).strip()
-            if spieler in ["nan", "None", ""]: continue
-            for d_name, d_cols in decks.items():
-                besitz = sum(1 for c in d_cols if pd.notna(row[c]) and int(float(str(row[c]).replace(',','.'))) > 0)
-                for c in d_cols:
-                    try:
-                        anz = int(float(str(row[c]).replace(',', '.')))
-                        if anz >= 2: gebot.append({"s": spieler, "k": c})
-                        elif anz == 0: bedarf.append({"s": spieler, "k": c, "f": besitz})
-                    except: continue
-
-        bedarf = sorted(bedarf, key=lambda x: x['f'], reverse=True)
-
-        def get_matches(is_dia):
-            results, weg = [], set()
-            # Fortschritt während der Analyse hochzählen (für GABRI88 Logik)
-            temp_progress = {b['s'] + b['k'].split('-')[0]: b['f'] for b in bedarf}
-
-            for b in bedarf:
-                deck_id = b['s'] + b['k'].split('-')[0]
-                if (("(D)" in b["k"]) == is_dia):
-                    for g in gebot:
-                        if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            aktuell = temp_progress.get(deck_id, b['f'])
-                            label = "🔥 FINISHER!" if aktuell >= 8 else f"({aktuell}/9)"
-                            results.append(f"{label} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
+            if d_
