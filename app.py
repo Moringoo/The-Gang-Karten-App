@@ -15,25 +15,25 @@ GID = "2025591169"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
 ADMIN_PASSWORT = "gang2026" 
 
-# --- 3. DESIGN & STYLING ---
+# --- 3. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .stButton>button { background-color: #1f2937; color: #fbbf24; border: 1px solid #fbbf24; font-weight: bold; width: 100%; border-radius: 10px; }
-    .main-title { text-align: center; color: #fbbf24; font-size: 2.5rem; font-weight: bold; margin-bottom: 0; }
-    .sub-title { text-align: center; color: #9ca3af; font-size: 1.2rem; margin-top: 0; margin-bottom: 2rem; }
     hr { border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- HEADER MIT TOTENKOPF ---
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    # Hier wird der Totenkopf angezeigt. 
-    # Du kannst die URL in den Anführungszeichen durch deinen Bild-Link ersetzen!
-    st.image("https://cdn-icons-png.flaticon.com/512/4232/4232454.png", width=150)
-    st.markdown('<p class="main-title">THE GANG HQ</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">💀 TOTENKOPFGANG 💀</p>', unsafe_allow_html=True)
+# --- LOGO & TITEL ---
+col_logo, col_titel = st.columns([1, 4])
+with col_logo:
+    # WICHTIG: Ersetze 'PFAD_ZU_DEINEM_BILD' durch den tatsächlichen Link zu deinem Totenkopf-Bild!
+    # Das Bild ist der Totenkopf mit gekreuzten Schwertern und Äxten sowie dem Text "TOTENKOPFGANG".
+    st.image("PFAD_ZU_DEINEM_BILD", width=120)
+
+with col_titel:
+    st.title("THE GANG: HAUPTQUARTIER")
+    st.subheader("💀 TOTENKOPFGANG")
 
 # --- BEREICH 1: KARTEN-EINGABE ---
 st.markdown("### 📝 MEINE KARTEN AKTUALISIEREN")
@@ -50,7 +50,6 @@ try:
     
     st.info(f"Eingabe für: **{name_sel}** | **Deck {deck_sel}**")
     
-    # 3x3 Raster
     r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
     alle_grids = r1 + r2 + r3
     
@@ -79,7 +78,7 @@ try:
                 except:
                     st.error("Verbindung zum Sheet fehlgeschlagen.")
 except Exception as e:
-    st.error(f"Ladefehler: {e}")
+    st.error(f"Ladefehler (Prüfe die SHEET_URL): {e}")
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
