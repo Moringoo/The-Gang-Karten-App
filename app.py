@@ -10,6 +10,7 @@ st.set_page_config(
 )
 
 # --- 2. KONFIGURATION ---
+# Falls du eine neue URL vom Google Script hast, hier eintragen!
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 GID = "2025591169"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
@@ -20,20 +21,15 @@ st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .stButton>button { background-color: #1f2937; color: #fbbf24; border: 1px solid #fbbf24; font-weight: bold; width: 100%; border-radius: 10px; }
-    .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 0; }
+    .main-title { text-align: center; color: #fbbf24; font-size: 2.5rem; font-weight: bold; margin-bottom: 0; }
+    .sub-title { text-align: center; color: #9ca3af; font-size: 1.2rem; margin-top: 0; margin-bottom: 2rem; }
     hr { border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGO & TITEL ---
-# Hier habe ich jetzt einen funktionierenden Link zu einem Totenkopf eingebaut!
-col_logo, col_titel = st.columns([1, 4])
-with col_logo:
-    st.image("https://cdn-icons-png.flaticon.com/512/4232/4232454.png", width=100)
-
-with col_titel:
-    st.markdown('<p class="main-title">THE GANG: HAUPTQUARTIER</p>', unsafe_allow_html=True)
-    st.subheader("💀 TOTENKOPFGANG")
+# --- HEADER (NUR TEXT) ---
+st.markdown('<p class="main-title">THE GANG: HAUPTQUARTIER</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">💀 TOTENKOPFGANG 💀</p>', unsafe_allow_html=True)
 
 # --- BEREICH 1: KARTEN-EINGABE ---
 st.markdown("### 📝 MEINE KARTEN AKTUALISIEREN")
@@ -57,7 +53,6 @@ try:
     neue_werte = []
     for i in range(9):
         with alle_grids[i]:
-            # Eindeutige Keys verhindern das Vermischen der Decks
             v = st.number_input(
                 f"K{i+1}", 0, 9, value=0, step=1, 
                 key=f"user_{name_sel}_deck_{deck_sel}_k{i}"
@@ -126,24 +121,4 @@ if pw_input == ADMIN_PASSWORT:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
                             aktuell = temp_progress.get(deck_id, b['f'])
                             label = "🔥 FINISHER!" if aktuell >= 8 else f"({aktuell}/9)"
-                            results.append(f"{label} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
-                            temp_progress[deck_id] = aktuell + 1
-                            weg.add(g["s"])
-                            break
-            return results
-
-        t_g, t_d = st.tabs(["🌕 GOLD DEALS", "💎 DIAMANT DEALS"])
-        with t_g:
-            m_g = get_matches(False)
-            if m_g:
-                for match in m_g: st.success(match)
-            else: st.write("Keine Gold-Matches.")
-        with t_d:
-            m_d = get_matches(True)
-            if m_d:
-                for match in m_d: st.info(match)
-            else: st.write("Keine Diamant-Matches.")
-    except Exception as e:
-        st.error(f"Analyse-Fehler: {e}")
-elif pw_input != "":
-    st.error("Falscher Code!")
+                            results.append(f"{label
