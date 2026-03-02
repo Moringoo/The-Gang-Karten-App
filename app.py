@@ -15,23 +15,25 @@ GID = "2025591169"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
 ADMIN_PASSWORT = "gang2026" 
 
-# --- 3. DESIGN ---
+# --- 3. DESIGN & STYLING ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .stButton>button { background-color: #1f2937; color: #fbbf24; border: 1px solid #fbbf24; font-weight: bold; width: 100%; border-radius: 10px; }
+    .main-title { text-align: center; color: #fbbf24; font-size: 2.5rem; font-weight: bold; margin-bottom: 0; }
+    .sub-title { text-align: center; color: #9ca3af; font-size: 1.2rem; margin-top: 0; margin-bottom: 2rem; }
     hr { border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGO & TITEL ---
-col_logo, col_titel = st.columns([1, 4])
-with col_logo:
-    # Totenkopf-Icon
-    st.image("https://cdn-icons-png.flaticon.com/512/4232/4232454.png", width=100)
-
-with col_titel:
-    st.title("THE GANG: HAUPTQUARTIER")
+# --- HEADER MIT TOTENKOPF ---
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    # Hier wird der Totenkopf angezeigt. 
+    # Du kannst die URL in den Anführungszeichen durch deinen Bild-Link ersetzen!
+    st.image("https://cdn-icons-png.flaticon.com/512/4232/4232454.png", width=150)
+    st.markdown('<p class="main-title">THE GANG HQ</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">💀 TOTENKOPFGANG 💀</p>', unsafe_allow_html=True)
 
 # --- BEREICH 1: KARTEN-EINGABE ---
 st.markdown("### 📝 MEINE KARTEN AKTUALISIEREN")
@@ -48,20 +50,15 @@ try:
     
     st.info(f"Eingabe für: **{name_sel}** | **Deck {deck_sel}**")
     
-    r1 = st.columns(3)
-    r2 = st.columns(3)
-    r3 = st.columns(3)
+    # 3x3 Raster
+    r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
     alle_grids = r1 + r2 + r3
     
     neue_werte = []
     for i in range(9):
         with alle_grids[i]:
             v = st.number_input(
-                f"K{i+1}", 
-                min_value=0, 
-                max_value=9, 
-                value=0, 
-                step=1, 
+                f"K{i+1}", 0, 9, value=0, step=1, 
                 key=f"user_{name_sel}_deck_{deck_sel}_k{i}"
             )
             neue_werte.append(str(int(v)))
@@ -80,15 +77,15 @@ try:
                     else:
                         st.error(f"Fehler: {res.text}")
                 except:
-                    st.error("Verbindung fehlgeschlagen.")
+                    st.error("Verbindung zum Sheet fehlgeschlagen.")
 except Exception as e:
     st.error(f"Ladefehler: {e}")
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-# --- BEREICH 2: ADMIN-TRESOR (TAUSCH-ANALYSE) ---
+# --- BEREICH 2: ADMIN-TRESOR ---
 st.markdown("### 🕵️‍♂️ ADMIN-BEREICH (TAUSCH-ANALYSE)")
-pw_input = st.text_input("Sicherheits-Code für Tauschvorschläge", type="password")
+pw_input = st.text_input("Sicherheits-Code", type="password")
 
 if pw_input == ADMIN_PASSWORT:
     st.success("Admin-Zugriff bestätigt.")
@@ -115,33 +112,21 @@ if pw_input == ADMIN_PASSWORT:
                         elif anz == 0: bedarf.append({"s": spieler, "k": c, "f": besitz})
                     except: continue
 
-        # Sortieren nach Fortschritt (höchster zuerst)
         bedarf = sorted(bedarf, key=lambda x: x['f'], reverse=True)
 
-        # INTELLIGENTE TAUSCH-LOGIK
         def get_matches(is_dia):
             results, weg = [], set()
-            # Temporärer Speicher, um Deck-Fortschritte während der Analyse hochzuzählen
             temp_progress = {b['s'] + b['k'].split('-')[0]: b['f'] for b in bedarf}
 
             for b in bedarf:
                 deck_id = b['s'] + b['k'].split('-')[0]
                 if (("(D)" in b["k"]) == is_dia):
                     for g in gebot:
-                        # Nur tauschen, wenn Geber noch nicht verplant und nicht derselbe Spieler
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            aktueller_stand = temp_progress.get(deck_id, b['f'])
-                            
-                            # Wenn er durch diesen Deal auf 9 Karten kommt -> FINISH!
-                            if aktueller_stand >= 8:
-                                label = "🔥 FINISHER!"
-                            else:
-                                label = f"({aktueller_stand}/9)"
-                            
+                            aktuell = temp_progress.get(deck_id, b['f'])
+                            label = "🔥 FINISHER!" if aktuell >= 8 else f"({aktuell}/9)"
                             results.append(f"{label} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
-                            
-                            # Fortschritt im Kopf hochzählen für den nächsten Deal
-                            temp_progress[deck_id] = aktueller_stand + 1
+                            temp_progress[deck_id] = aktuell + 1
                             weg.add(g["s"])
                             break
             return results
@@ -150,6 +135,14 @@ if pw_input == ADMIN_PASSWORT:
         with t_g:
             m_g = get_matches(False)
             if m_g:
-                for m in m_g: st.success(m)
-            else: st.write("Keine Gold-Deals.")
-        with t
+                for match in m_g: st.success(match)
+            else: st.write("Keine Gold-Matches.")
+        with t_d:
+            m_d = get_matches(True)
+            if m_d:
+                for match in m_d: st.info(match)
+            else: st.write("Keine Diamant-Matches.")
+    except Exception as e:
+        st.error(f"Analyse-Fehler: {e}")
+elif pw_input != "":
+    st.error("Falscher Code!")
