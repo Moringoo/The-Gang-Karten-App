@@ -10,7 +10,6 @@ st.set_page_config(
 )
 
 # --- 2. KONFIGURATION ---
-# Falls du eine neue URL vom Google Script hast, hier eintragen!
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 GID = "2025591169"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
@@ -27,7 +26,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- HEADER (NUR TEXT) ---
+# --- HEADER ---
 st.markdown('<p class="main-title">THE GANG: HAUPTQUARTIER</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">💀 TOTENKOPFGANG 💀</p>', unsafe_allow_html=True)
 
@@ -46,7 +45,6 @@ try:
     
     st.info(f"Eingabe für: **{name_sel}** | **Deck {deck_sel}**")
     
-    # 3x3 Raster
     r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
     alle_grids = r1 + r2 + r3
     
@@ -75,7 +73,7 @@ try:
                 except:
                     st.error("Verbindung zum Sheet fehlgeschlagen.")
 except Exception as e:
-    st.error(f"Ladefehler: {e}")
+    st.error(f"Fehler beim Laden: {e}")
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
@@ -112,6 +110,7 @@ if pw_input == ADMIN_PASSWORT:
 
         def get_matches(is_dia):
             results, weg = [], set()
+            # Fortschritt während der Analyse hochzählen (für GABRI88 Logik)
             temp_progress = {b['s'] + b['k'].split('-')[0]: b['f'] for b in bedarf}
 
             for b in bedarf:
@@ -121,4 +120,4 @@ if pw_input == ADMIN_PASSWORT:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
                             aktuell = temp_progress.get(deck_id, b['f'])
                             label = "🔥 FINISHER!" if aktuell >= 8 else f"({aktuell}/9)"
-                            results.append(f"{label
+                            results.append(f"{label} | **{g['s']}** ➔ **{b['s']}** ({g['k']})")
