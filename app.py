@@ -22,6 +22,7 @@ st.markdown("""
     .stButton>button { background-color: #1f2937; color: #fbbf24; border: 1px solid #fbbf24; font-weight: bold; width: 100%; border-radius: 10px; }
     .main-title { text-align: center; color: #fbbf24; font-size: 2.5rem; font-weight: bold; margin-bottom: 0; }
     .sub-title { text-align: center; color: #9ca3af; font-size: 1.2rem; margin-top: 0; margin-bottom: 2rem; }
+    .card-label { color: #fbbf24; font-weight: bold; margin-bottom: -10px; }
     hr { border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
@@ -34,7 +35,6 @@ st.markdown('<p class="sub-title">💀 TOTENKOPFGANG 💀</p>', unsafe_allow_htm
 st.markdown("### 📝 MEINE KARTEN AKTUALISIEREN")
 
 try:
-    # Daten laden
     df_raw = pd.read_csv(SHEET_URL)
     spieler_namen = df_raw.iloc[:, 0].dropna().unique().tolist()
     
@@ -44,7 +44,7 @@ try:
     with col_b:
         deck_sel = st.selectbox("Welches Deck?", list(range(1, 16)))
 
-    # DATEN VORLADEN (Damit nichts auf 0 gesetzt wird)
+    # DATEN VORLADEN
     aktuelle_werte = [0] * 9
     if name_sel != "Bitte wählen...":
         spieler_zeile = df_raw[df_raw.iloc[:, 0] == name_sel]
@@ -59,21 +59,27 @@ try:
         
         st.info(f"Karten für **{name_sel}** (Deck {deck_sel}) geladen.")
 
-        # 3x3 Raster
-        r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
-        alle_grids = r1 + r2 + r3
+        # 3x3 Raster mit K1-K9 Beschriftung
+        rows = [st.columns(3) for _ in range(3)]
+        alle_grids = [col for row in rows for col in row]
         
         neue_werte = []
         for i in range(9):
             with alle_grids[i]:
+                # Beschriftung K1, K2, K3...
+                st.markdown(f'<p class="card-label">Karte K{i+1}</p>', unsafe_allow_html=True)
                 v = st.number_input(
-                    f"K{i+1}", 0, 9, 
-                    value=aktuelle_werte[i], # HIER werden die alten Werte behalten!
+                    label=f"K{i+1}", # Label für Screenreader/System
+                    min_value=0, 
+                    max_value=9, 
+                    value=aktuelle_werte[i], 
                     step=1, 
-                    key=f"input_{name_sel}_{deck_sel}_k{i}"
+                    key=f"input_{name_sel}_{deck_sel}_k{i}",
+                    label_visibility="collapsed" # Wir nehmen unser eigenes schönes Label
                 )
                 neue_werte.append(str(int(v)))
         
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🚀 ÄNDERUNGEN SPEICHERN"):
             with st.spinner("Speichere im HQ..."):
                 try:
@@ -88,18 +94,17 @@ try:
                     st.error("Verbindung zum HQ-Server fehlgeschlagen.")
 
 except Exception as e:
-    st.error(f"Fehler beim Laden der Datenbank: {e}")
+    st.error(f"Fehler beim Laden: {e}")
 
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-# --- BEREICH 2: ADMIN-TRESOR (TAUSCH-ANALYSE) ---
+# --- BEREICH 2: ADMIN-TRESOR ---
 st.markdown("### 🕵️‍♂️ ADMIN-BEREICH (TAUSCH-ANALYSE)")
 pw_input = st.text_input("Sicherheits-Code eingeben", type="password")
 
 if pw_input == ADMIN_PASSWORT:
-    st.success("Zugriff auf Tausch-Zentrale gewährt.")
+    st.success("Zugriff gewährt.")
     try:
-        # Frische Daten für die Analyse holen
         df = pd.read_csv(SHEET_URL)
         karten_cols = df.columns[1:]
         
@@ -127,7 +132,6 @@ if pw_input == ADMIN_PASSWORT:
         def get_matches(is_dia):
             results, weg = [], set()
             temp_progress = {b['s'] + b['k'].split('-')[0]: b['f'] for b in bedarf}
-
             for b in bedarf:
                 deck_id = b['s'] + b['k'].split('-')[0]
                 if (("(D)" in b["k"]) == is_dia):
@@ -146,13 +150,13 @@ if pw_input == ADMIN_PASSWORT:
             m_g = get_matches(False)
             if m_g:
                 for match in m_g: st.success(match)
-            else: st.write("Keine Gold-Matches aktuell.")
+            else: st.write("Keine Gold-Matches.")
         with t_d:
             m_d = get_matches(True)
             if m_d:
                 for match in m_d: st.info(match)
-            else: st.write("Keine Diamant-Matches aktuell.")
+            else: st.write("Keine Diamant-Matches.")
     except Exception as e:
-        st.error(f"Analyse-Fehler: {e}")
+        st.error(f"Fehler: {e}")
 elif pw_input != "":
-    st.error("Code falsch! Zugriff verweigert.")
+    st.error("Zugriff verweigert.")
