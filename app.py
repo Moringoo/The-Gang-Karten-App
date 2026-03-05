@@ -15,10 +15,10 @@ ADMIN_PASSWORT = "gang2026"
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
-    .stButton>button { background-color: #1f2937; color: #fbbf24; border: 1px solid #fbbf24; font-weight: bold; width: 100%; border-radius: 10px; }
+    .stButton>button { background-color: #1f2937; color: #fbbf24; border: 1px solid #fbbf24; font-weight: bold; border-radius: 10px; }
     .main-title { text-align: center; color: #fbbf24; font-size: 2.5rem; font-weight: bold; margin-bottom: 0; }
     .sub-title { text-align: center; color: #9ca3af; font-size: 1.2rem; margin-top: 0; margin-bottom: 2rem; }
-    .stat-card { background-color: #1f2937; padding: 10px; border-radius: 10px; border-top: 3px solid #fbbf24; text-align: center; height: 100px;}
+    .stat-card { background-color: #1f2937; padding: 10px; border-radius: 10px; border-top: 3px solid #fbbf24; text-align: center; }
     hr { border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
@@ -30,8 +30,8 @@ try:
     df_raw = pd.read_csv(SHEET_URL)
     spieler_namen = df_raw.iloc[:, 0].dropna().unique().tolist()
     
-    # --- DASHBOARD: WER STEHT KURZ DAVOR? ---
-    st.markdown("### 🏆 DECK-FINISHER (7/9 oder 8/9)")
+    # --- DASHBOARD ---
+    st.markdown("### 🏆 DECK-FINISHER (PRIORITÄT)")
     decks_prio = []
     for _, row in df_raw.iterrows():
         spieler = str(row.iloc[0]).strip()
@@ -39,12 +39,7 @@ try:
         for d in range(1, 16):
             start_col = 1 + ((d - 1) * 9)
             if start_col + 8 < len(df_raw.columns):
-                count = 0
-                for i in range(9):
-                    try:
-                        val = int(float(str(row.iloc[start_col + i]).replace(',', '.')))
-                        if val > 0: count += 1
-                    except: pass
+                count = sum(1 for i in range(9) if pd.notna(row.iloc[start_col + i]) and int(float(str(row.iloc[start_col + i]).replace(',', '.'))) > 0)
                 if count >= 7 and count < 9:
                     decks_prio.append({"s": spieler, "d": d, "c": count})
 
@@ -72,61 +67,47 @@ try:
                     except: pass
             r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
             grids = r1 + r2 + r3
-            neue_werte = []
-            for i in range(9):
-                with grids[i]:
-                    v = st.number_input(f"K{i+1}", 0, 9, value=aktuelle_werte[i], key=f"e_{name_sel}_{deck_sel}_{i}")
-                    neue_werte.append(str(int(v)))
+            neue_werte = [str(int(grids[i].number_input(f"K{i+1}", 0, 9, value=aktuelle_werte[i], key=f"e_{name_sel}_{deck_sel}_{i}"))) for i in range(9)]
             if st.button("🚀 SPEICHERN"):
                 res = requests.get(SCRIPT_URL, params={"name": name_sel, "deck": deck_sel, "werte": ",".join(neue_werte)})
-                if res.text == "Erfolg": st.success("Daten im Sheet!"); st.balloons()
-
-    st.markdown("<hr>", unsafe_allow_html=True)
+                if res.text == "Erfolg": st.success("Gespeichert!"); st.balloons()
 
     # --- ADMIN TAUSCH ANALYSE ---
     st.markdown("### 🕵️‍♂️ ADMIN-BEREICH")
-    if st.text_input("Code", type="password") == ADMIN_PASSWORT:
+    if st.text_input("Sicherheits-Code", type="password") == ADMIN_PASSWORT:
         
         gebot, bedarf = [], []
-        # Wir sammeln jetzt Bedarf pro Deck-ID
         for _, row in df_raw.iterrows():
             spieler = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 start_c = 1 + ((d - 1) * 9)
-                besitz = 0
-                for i in range(9):
-                    try:
-                        if int(float(str(row.iloc[start_c + i]).replace(',', '.'))) > 0: besitz += 1
-                    except: pass
-                
+                besitz = sum(1 for i in range(9) if int(float(str(row.iloc[start_c + i]).replace(',', '.'))) > 0)
                 for i in range(9):
                     c_name = df_raw.columns[start_c + i]
-                    try:
-                        anz = int(float(str(row.iloc[start_c + i]).replace(',', '.')))
-                        if anz >= 2: gebot.append({"s": spieler, "k": c_name})
-                        elif anz == 0: 
-                            # WICHTIG: Wir speichern, zu welchem Deck die Karte gehört!
-                            bedarf.append({"s": spieler, "k": c_name, "f": besitz, "d_id": f"{spieler}_D{d}"})
-                    except: pass
+                    anz = int(float(str(row.iloc[start_c + i]).replace(',', '.')))
+                    if anz >= 2: gebot.append({"s": spieler, "k": c_name})
+                    elif anz == 0: bedarf.append({"s": spieler, "k": c_name, "f": besitz, "d_id": f"{spieler}_D{d}"})
 
-        # Sortieren: Höchster Fortschritt zuerst
-        bedarf = sorted(bedarf, key=lambda x: x['f'], reverse=True)
+        # SORTIERUNG: Erst nach Fortschritt (f), dann nach Deck-ID
+        # Das sorgt dafür, dass alle Karten eines Decks nacheinander abgearbeitet werden.
+        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d_id']), reverse=True)
 
         def get_matches(is_dia):
             results, weg_geber = [], set()
-            # Wir tracken den Fortschritt pro Deck während der Analyse
             fortschritt_tracker = {b['d_id']: b['f'] for b in bedarf}
 
             for b in bedarf:
                 if (("(D)" in b["k"]) == is_dia):
+                    # NEU: Wir prüfen, ob dieser Spieler in DIESEM Deck schon eine Karte bekommen hat
+                    # und bevorzugen ihn weiter, bis das Deck voll ist (max 9).
                     for g in gebot:
-                        # Geber hat Karte, Geber ist nicht Nehmer, Geber noch nicht leer, Karte passt
                         if g["s"] not in weg_geber and g["s"] != b["s"] and g["k"] == b["k"]:
                             aktuell = fortschritt_tracker[b['d_id']]
-                            label = "🔥 FINISHER!" if aktuell >= 8 else f"({aktuell}/9)"
+                            if aktuell >= 9: continue # Deck ist durch diese Runde schon voll
+                            
+                            label = "🚨 FINISHER!" if aktuell == 8 else f"({aktuell}/9)"
                             results.append(f"**{label}** {g['s']} ➔ {b['s']} ({b['k']})")
                             
-                            # Deck-Fortschritt für DIESES Deck erhöhen
                             fortschritt_tracker[b['d_id']] += 1
                             weg_geber.add(g["s"])
                             break
@@ -134,8 +115,10 @@ try:
 
         t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
         with t1:
-            for m in get_matches(False): st.success(m)
+            m_g = get_matches(False)
+            for m in m_g: st.success(m)
         with t2:
-            for m in get_matches(True): st.info(m)
+            m_d = get_matches(True)
+            for m in m_d: st.info(m)
             
 except Exception as e: st.error(f"Fehler: {e}")
