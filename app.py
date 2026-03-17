@@ -17,16 +17,16 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. SESSION STATE (FIX: Jetzt als Dictionary für Zuordnungen) ---
+# --- 3. SESSION STATE ---
 if 'reserviert' not in st.session_state:
-    st.session_state.reserviert = {} # Geber_Karte -> Nehmer
+    st.session_state.reserviert = {} 
 
 # --- 4. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; }
-    .prio-box { background-color: #1e293b; padding: 15px; border-radius: 10px; border-left: 5px solid #fbbf24; margin-bottom: 10px; border-right: 1px solid #334155; border-top: 1px solid #334155; border-bottom: 1px solid #334155; }
+    .prio-box { background-color: #1e293b; padding: 15px; border-radius: 10px; border-left: 5px solid #fbbf24; margin-bottom: 10px; border: 1px solid #334155; }
     .finisher-badge { background-color: #ef4444; color: white; padding: 4px 8px; border-radius: 5px; font-weight: bold; font-size: 0.9rem; }
     .blink { animation: blinker 1.5s linear infinite; }
     @keyframes blinker { 50% { opacity: 0.4; } }
@@ -70,13 +70,13 @@ try:
                 if safe_int(row[col]) >= 2:
                     alle_gebot.append({"name": g_n, "karte": col})
 
-        found = False
+        found_prio = False
         for d in range(1, 16):
             start_c = 1 + ((d - 1) * 9)
             besitz = sum(1 for i in range(9) if safe_int(s_row.iloc[0, start_c + i]) > 0)
             
             if 7 <= besitz < 9:
-                found = True
+                found_prio = True
                 status = "🚨 FINISHER!" if besitz == 8 else "⭐ FAST VOLL"
                 blink_class = "blink" if besitz == 8 else ""
                 
@@ -93,7 +93,6 @@ try:
                         if moegliche:
                             for geber in moegliche:
                                 r_key = f"{geber}_{c_n}"
-                                # Checkbox Logik (FIXED)
                                 is_checked = st.checkbox(f"✅ {geber} hat `{c_n}`", key=f"c_{search_name}_{r_key}")
                                 if is_checked:
                                     st.session_state.reserviert[r_key] = search_name
@@ -101,7 +100,7 @@ try:
                                     del st.session_state.reserviert[r_key]
                         else:
                             st.write(f"❌ Karte `{c_n}` fehlt (Kein Spender).")
-        if not found: st.info("Keine Decks bei 7/9 oder 8/9 für diesen Spieler gefunden.")
+        if not found_prio: st.info("Keine Decks bei 7/9 oder 8/9 für diesen Spieler gefunden.")
 
     # --- BEREICH 3: ADMIN & AUTOMATIK ---
     st.markdown("<hr>", unsafe_allow_html=True)
@@ -115,4 +114,38 @@ try:
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
-                bz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i
+                bz = sum(1 for i in range(9) if safe_int(row.iloc[sc + i]) > 0)
+                for i in range(9):
+                    cn = df_raw.columns[sc + i]
+                    if safe_int(row.iloc[sc + i]) >= 2:
+                        if f"{sp}_{cn}" not in st.session_state.reserviert:
+                            gebot.append({"s": sp, "k": cn})
+                    elif safe_int(row.iloc[sc + i]) == 0:
+                        bedarf.append({"s": sp, "k": cn, "f": bz, "did": f"{sp}_D{d}"})
+
+        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['did']), reverse=True)
+        
+        def get_matches(is_dia):
+            res, weg = [], set()
+            fort = {b['did']: b['f'] for b in bedarf}
+            for b in bedarf:
+                if (("(D)" in b["k"]) == is_dia):
+                    for g in gebot:
+                        if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
+                            akt = fort[b['did']]
+                            if akt < 9:
+                                label = "🚨 FINISHER!" if akt == 8 else f"({akt}/9)"
+                                res.append(f"**{label}** {g['s']} ➔ {b['s']} ({b['k']})")
+                                fort[b['did']] += 1
+                                weg.add(g["s"])
+                                break
+            return res
+
+        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
+        with t1:
+            for m in get_matches(False): st.success(m)
+        with t2:
+            for m in get_matches(True): st.info(m)
+
+except Exception as e: 
+    st.error(f"Kritischer Fehler: {e}")
