@@ -17,9 +17,9 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. SESSION STATE FÜR RESERVIERUNGEN ---
+# --- 3. SESSION STATE ---
 if 'reserviert' not in st.session_state:
-    st.session_state.reserviert = set()
+    st.session_state.reserviert = {}
 
 # --- 4. DESIGN ---
 st.markdown("""
@@ -27,22 +27,24 @@ st.markdown("""
     .stApp { background-color: #0e1117; color: #ffffff; }
     .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; }
     .prio-box { background-color: #1e293b; padding: 15px; border-radius: 10px; border-left: 5px solid #fbbf24; margin-bottom: 10px; }
-    .success-text { color: #10b981; font-weight: bold; }
+    .finisher-text { color: #ff4b4b; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+    .blink { animation: blinker 1.5s linear infinite; }
+    @keyframes blinker { 50% { opacity: 0.3; } }
     </style>
     """, unsafe_allow_html=True)
 
 try:
     df_raw = pd.read_csv(SHEET_URL)
-    df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "") & (df_raw.iloc[:, 0].str.strip() != "Männlich")]
+    df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "")]
     spieler_namen = sorted(df_raw.iloc[:, 0].unique().tolist())
 
-    st.markdown('<p class="main-title">💀 GANG HQ: STRATEGIE-ZENTRALE</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">💀 GANG HQ: FINISHER-STRATEGIE</p>', unsafe_allow_html=True)
 
     # --- BEREICH 1: KARTEN-EINGABE ---
     with st.expander("📝 KARTEN AKTUALISIEREN"):
-        col1, col2 = st.columns(2)
-        n_sel = col1.selectbox("Name", ["Wählen..."] + spieler_namen)
-        d_sel = col2.selectbox("Deck", list(range(1, 16)))
+        c1, c2 = st.columns(2)
+        n_sel = c1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen)
+        d_sel = c2.selectbox("Welches Deck?", list(range(1, 16)))
         if n_sel != "Wählen...":
             s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
             start_c = 1 + ((d_sel - 1) * 9)
@@ -54,9 +56,9 @@ try:
                 requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": ",".join(neue)})
                 st.success("Gespeichert!"); st.rerun()
 
-    # --- BEREICH 2: GEZIELTE SUCHE (PRIO 7/9 & 8/9) ---
-    st.markdown("### 🎯 GEZIELTE FINISHER-SUCHE")
-    search_name = st.selectbox("Wer soll gefördert werden?", ["Wählen..."] + spieler_namen)
+    # --- BEREICH 2: GEZIELTE FINISHER-SUCHE ---
+    st.markdown("### 🎯 GEZIELTE SUCHE (7/9 & 8/9)")
+    search_name = st.selectbox("Wer soll heute Decks vollmachen?", ["Wählen..."] + spieler_namen)
     
     if search_name != "Wählen...":
         s_row = df_raw[df_raw.iloc[:, 0] == search_name]
@@ -73,34 +75,37 @@ try:
             start_c = 1 + ((d - 1) * 9)
             besitz = sum(1 for i in range(9) if safe_int(s_row.iloc[0, start_c + i]) > 0)
             
-            # NUR 7/9 oder 8/9 vorschlagen
             if 7 <= besitz < 9:
                 found = True
-                st.markdown(f'<div class="prio-box"><b>Deck {d} ({besitz}/9)</b>', unsafe_allow_html=True)
+                status_text = "🚨 FINISHER! (Nur noch 1 Karte)" if besitz == 8 else "⭐ FAST VOLL (Noch 2 Karten)"
+                st.markdown(f'''
+                    <div class="prio-box">
+                        <span class="finisher-text {"blink" if besitz==8 else ""}">{status_text}</span><br>
+                        <b>Deck {d} ({besitz}/9)</b>
+                    </div>
+                ''', unsafe_allow_html=True)
+                
                 for i in range(9):
                     c_n = df_raw.columns[start_c + i]
                     if safe_int(s_row.iloc[0, start_c + i]) == 0:
-                        moegliche_geber = [g['name'] for g in alle_gebot if g['karte'] == c_n]
-                        if moegliche_geber:
-                            for geber in moegliche_geber:
-                                res_key = f"{geber}_{c_n}"
-                                if st.checkbox(f"✅ {geber} gibt `{c_n}` an {search_name}", key=f"res_{res_key}"):
-                                    st.session_state.reserviert.add(res_key)
-                                else:
-                                    st.session_state.reserviert.discard(res_key)
+                        moegliche = [g['name'] for g in alle_gebot if g['karte'] == c_n]
+                        if moegliche:
+                            for geber in moegliche:
+                                r_key = f"{geber}_{c_n}"
+                                if st.checkbox(f"✅ {geber} hat `{c_n}` für {search_name}", key=f"chk_{search_name}_{r_key}"):
+                                    st.session_state.reserviert[r_key] = search_name
+                                elif r_key in st.session_state.reserviert and st.session_state.reserviert[r_key] == search_name:
+                                    del st.session_state.reserviert[r_key]
                         else:
-                            st.write(f"❌ `{c_n}`: Kein Spender gefunden.")
-                st.markdown('</div>', unsafe_allow_html=True)
-        if not found: st.info("Keine Decks bei 7/9 oder 8/9 gefunden.")
+                            st.write(f"❌ Karte `{c_n}` fehlt (Niemand hat sie doppelt).")
+        if not found: st.info("Keine Decks bei 7/9 oder 8/9 für diesen Spieler gefunden.")
 
-    # --- BEREICH 3: RESTLICHE ANALYSE ---
+    # --- BEREICH 3: ADMIN & AUTOMATIK ---
     st.markdown("<hr>", unsafe_allow_html=True)
     if st.text_input("Admin-Code", type="password") == ADMIN_PASSWORT:
-        if st.button("Reservierungen löschen"):
-            st.session_state.reserviert = set(); st.rerun()
-            
-        st.write(f"Aktiv reservierte Geber: {len(st.session_state.reserviert)}")
-        
+        if st.button("Alle Reservierungen löschen"):
+            st.session_state.reserviert = {}; st.rerun()
+
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
             sp = str(row.iloc[0]).strip()
@@ -110,7 +115,6 @@ try:
                 for i in range(9):
                     cn = df_raw.columns[sc+i]
                     if safe_int(row.iloc[sc+i]) >= 2:
-                        # NUR wenn nicht oben reserviert!
                         if f"{sp}_{cn}" not in st.session_state.reserviert:
                             gebot.append({"s": sp, "k": cn})
                     elif safe_int(row.iloc[sc+i]) == 0:
@@ -125,8 +129,10 @@ try:
                 if (("(D)" in b["k"]) == is_dia):
                     for g in gebot:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            if fort[b['did']] < 9:
-                                res.append(f"**({fort[b['did']]}/9)** {g['s']} ➔ {b['s']} ({b['k']})")
+                            akt = fort[b['did']]
+                            if akt < 9:
+                                label = "🚨 FINISHER!" if akt == 8 else f"({akt}/9)"
+                                res.append(f"**{label}** {g['s']} ➔ {b['s']} ({b['k']})")
                                 fort[b['did']] += 1; weg.add(g["s"])
                                 break
             return res
