@@ -60,16 +60,17 @@ try:
     st.markdown("### 🎯 GEZIELTE SUCHE (7/9 & 8/9)")
     search_name = st.selectbox("Wer soll heute Decks vollmachen?", ["Wählen..."] + spieler_namen)
     
+    # Vor-Berechnung der Gebote, damit die Checkboxen wissen, was Sache ist
+    alle_gebot_dict = {}
+    for _, row in df_raw.iterrows():
+        g_n = str(row.iloc[0]).strip()
+        for col in df_raw.columns[1:]:
+            if safe_int(row[col]) >= 2:
+                if col not in alle_gebot_dict: alle_gebot_dict[col] = []
+                alle_gebot_dict[col].append(g_n)
+
     if search_name != "Wählen...":
         s_row = df_raw[df_raw.iloc[:, 0] == search_name]
-        alle_gebot = []
-        for _, row in df_raw.iterrows():
-            g_n = str(row.iloc[0]).strip()
-            if g_n == search_name: continue
-            for col in df_raw.columns[1:]:
-                if safe_int(row[col]) >= 2:
-                    alle_gebot.append({"name": g_n, "karte": col})
-
         found_prio = False
         for d in range(1, 16):
             start_c = 1 + ((d - 1) * 9)
@@ -89,12 +90,16 @@ try:
                 for i in range(9):
                     c_n = df_raw.columns[start_c + i]
                     if safe_int(s_row.iloc[0, start_c + i]) == 0:
-                        moegliche = [g['name'] for g in alle_gebot if g['karte'] == c_n]
+                        moegliche = alle_gebot_dict.get(c_n, [])
+                        # Eigenen Namen aus Spenderliste filtern
+                        moegliche = [m for m in moegliche if m != search_name]
+                        
                         if moegliche:
                             for geber in moegliche:
                                 r_key = f"{geber}_{c_n}"
-                                is_checked = st.checkbox(f"✅ {geber} hat `{c_n}`", key=f"c_{search_name}_{r_key}")
-                                if is_checked:
+                                # WICHTIG: Prüfen ob bereits reserviert
+                                checked = st.checkbox(f"✅ {geber} gibt `{c_n}`", key=f"c_{search_name}_{r_key}", value=(st.session_state.reserviert.get(r_key) == search_name))
+                                if checked:
                                     st.session_state.reserviert[r_key] = search_name
                                 elif r_key in st.session_state.reserviert and st.session_state.reserviert[r_key] == search_name:
                                     del st.session_state.reserviert[r_key]
@@ -105,9 +110,13 @@ try:
     # --- BEREICH 3: ADMIN & AUTOMATIK ---
     st.markdown("<hr>", unsafe_allow_html=True)
     if st.text_input("Admin-Code", type="password") == ADMIN_PASSWORT:
-        if st.button("Alle Reservierungen löschen"):
+        col_clear, col_info = st.columns([1, 3])
+        if col_clear.button("Reservierungen löschen"):
             st.session_state.reserviert = {}
             st.rerun()
+        
+        if st.session_state.reserviert:
+            st.write("**Aktuell reserviert:** " + ", ".join([f"{k.split('_')[0]} ➔ {v}" for k,v in st.session_state.reserviert.items()]))
 
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
@@ -117,6 +126,7 @@ try:
                 bz = sum(1 for i in range(9) if safe_int(row.iloc[sc + i]) > 0)
                 for i in range(9):
                     cn = df_raw.columns[sc + i]
+                    # NUR HIER IST DIE FILTER-LOGIK:
                     if safe_int(row.iloc[sc + i]) >= 2:
                         if f"{sp}_{cn}" not in st.session_state.reserviert:
                             gebot.append({"s": sp, "k": cn})
