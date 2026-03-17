@@ -11,7 +11,7 @@ GID = "2025591169"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
 ADMIN_PASSWORT = "gang2026" 
 
-# Hilfsfunktion zum sauberen Umwandeln von Werten (verhindert den NaN Fehler)
+# --- HILFSFUNKTIONEN ---
 def safe_int(val):
     try:
         if pd.isna(val) or str(val).strip() == "" or str(val).lower() == "nan":
@@ -36,16 +36,22 @@ st.markdown('<p class="main-title">THE GANG: HAUPTQUARTIER</p>', unsafe_allow_ht
 st.markdown('<p class="sub-title">💀 TOTENKOPFGANG 💀</p>', unsafe_allow_html=True)
 
 try:
-    # Daten laden
+    # Daten laden und direkt bereinigen
     df_raw = pd.read_csv(SHEET_URL)
-    spieler_namen = df_raw.iloc[:, 0].dropna().unique().tolist()
+    
+    # FILTER: Entferne leere Zeilen und den Begriff "Männlich" aus der Namensliste
+    # Wir löschen alle Zeilen, wo die erste Spalte leer ist oder "Männlich" heißt
+    df_raw = df_raw[df_raw.iloc[:, 0].notna()]
+    df_raw = df_raw[df_raw.iloc[:, 0].str.strip() != ""]
+    df_raw = df_raw[df_raw.iloc[:, 0].str.strip() != "Männlich"]
+    
+    spieler_namen = df_raw.iloc[:, 0].unique().tolist()
     
     # --- DASHBOARD ---
     st.markdown("### 🏆 DECK-FINISHER (PRIORITÄT)")
     decks_prio = []
     for _, row in df_raw.iterrows():
         spieler = str(row.iloc[0]).strip()
-        if spieler in ["nan", "None", ""]: continue
         for d in range(1, 16):
             start_col = 1 + ((d - 1) * 9)
             if start_col + 8 < len(df_raw.columns):
@@ -89,7 +95,9 @@ try:
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
             spieler = str(row.iloc[0]).strip()
-            if spieler in ["nan", "None", ""]: continue
+            # Sicherheitscheck: Überspringe leere Namen oder Geister-Einträge
+            if not spieler or spieler.lower() in ["nan", "männlich", "none"]: continue
+            
             for d in range(1, 16):
                 start_c = 1 + ((d - 1) * 9)
                 besitz = sum(1 for i in range(9) if safe_int(row.iloc[start_c + i]) > 0)
