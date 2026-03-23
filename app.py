@@ -23,19 +23,16 @@ st.markdown("""
     .stApp { background-color: #0e1117; color: #ffffff; }
     .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 20px; }
     .finisher-badge { background-color: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
-    .success-box { background-color: #064e3b; border: 1px solid #10b981; padding: 10px; border-radius: 5px; margin-bottom: 5px; }
+    .diamond-prio { background-color: #3b82f6; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; margin-left: 5px; }
+    .blink { animation: blinker 1.5s linear infinite; }
+    @keyframes blinker { 50% { opacity: 0.4; } }
     </style>
     """, unsafe_allow_html=True)
 
 try:
-    # Daten laden - Wir erzwingen, dass die erste Spalte als Text (String) gelesen wird
+    # Daten laden
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
-    
-    # Filter-Korrektur: Wir entfernen leere Zeilen, aber behalten "Male" (auch wenn es als "Männlich" kommt)
-    df_raw = df_raw[df_raw.iloc[:, 0].notna()]
-    df_raw = df_raw[df_raw.iloc[:, 0].str.strip() != ""]
-    
-    # Falls Excel "Male" zu "Männlich" gemacht hat, biegen wir es hier für die Anzeige zurück
+    df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "")]
     df_raw.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
     
     spieler_namen = sorted(df_raw.iloc[:, 0].unique().tolist())
@@ -51,8 +48,6 @@ try:
     if n_sel != "Wählen...":
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
-        
-        # Sicherstellen, dass wir genug Spalten haben
         vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
         
         r1, r2, r3 = st.columns(3), st.columns(3), st.columns(3)
@@ -64,7 +59,6 @@ try:
                 neue_werte.append(str(int(v)))
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN"):
-            # Falls wir "Male" zurückschicken, stellen wir sicher, dass das Skript es versteht
             res = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": ",".join(neue_werte)})
             st.success(f"Daten für {n_sel} wurden übertragen!"); st.rerun()
 
@@ -72,35 +66,64 @@ try:
 
     # --- BEREICH 2: AUTOMATISCHE TAUSCHANALYSE ---
     if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        st.markdown("### 🕵️‍♂️ BESTE TAUSCH-OPTIONEN")
+        st.markdown("### 🕵️‍♂️ BESTE TAUSCH-OPTIONEN (Prio: Finisher & Diamanten)")
         
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
-                bz = sum(1 for i in range(9) if safe_int(row.iloc[sc + i]) > 0)
+                
+                # Basis-Daten für dieses Deck sammeln
+                bz = 0
+                dia_count = 0
                 for i in range(9):
                     cn = df_raw.columns[sc + i]
                     val = safe_int(row.iloc[sc + i])
+                    if val > 0: bz += 1
+                    if "(D)" in cn: dia_count += 1
+                
+                # Karten einzeln prüfen
+                for i in range(9):
+                    cn = df_raw.columns[sc + i]
+                    val = safe_int(row.iloc[sc + i])
+                    
                     if val >= 2:
                         gebot.append({"s": sp, "k": cn})
                     elif val == 0:
-                        # Wir speichern den Fortschritt (bz) für die Priorisierung
-                        bedarf.append({"s": sp, "k": cn, "f": bz, "did": f"{sp}_D{d}"})
+                        # Wir speichern Fortschritt UND Diamant-Wertigkeit
+                        is_dia_deck = dia_count > 0
+                        bedarf.append({
+                            "s": sp, 
+                            "k": cn, 
+                            "f": bz, 
+                            "d_val": dia_count, # Je mehr Diamant-Karten im Deck, desto höher die Prio
+                            "did": f"{sp}_D{d}"
+                        })
 
-        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['did']), reverse=True)
+        # SORTIERUNG: Erst Finisher (f=8), dann nach Anzahl der Diamanten (d_val), dann normaler Fortschritt
+        bedarf = sorted(bedarf, key=lambda x: (x['f'] == 8, x['d_val'], x['f']), reverse=True)
         
-        def get_matches(is_dia):
+        def get_matches(is_dia_tab):
             res, weg = [], set()
             fort_map = {b['did']: b['f'] for b in bedarf}
             for b in bedarf:
-                if (("(D)" in b["k"]) == is_dia):
+                if (("(D)" in b["k"]) == is_dia_tab):
                     for g in gebot:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
                             akt = fort_map[b['did']]
-                            label = "🚨 FINISHER!" if akt == 8 else f"({akt}/9)"
-                            res.append(f"**{label}** {g['s']} ➔ {b['s']} ({b['k']})")
+                            
+                            # Label zusammenbauen
+                            labels = ""
+                            if akt == 8:
+                                labels += '<span class="finisher-badge blink">🚨 FINISHER!</span>'
+                            else:
+                                labels += f"({akt}/9)"
+                            
+                            if b['d_val'] > 0:
+                                labels += f'<span class="diamond-prio">💎 {b["d_val"]}x DIA</span>'
+                                
+                            res.append(f"{labels} {g['s']} ➔ {b['s']} ({g['k']})")
                             fort_map[b['did']] += 1
                             weg.add(g["s"])
                             break
@@ -108,9 +131,13 @@ try:
 
         t1, t2 = st.tabs(["🌕 GOLD-KARTEN", "💎 DIAMANT-KARTEN"])
         with t1:
-            for m in get_matches(False): st.success(m)
+            m_gold = get_matches(False)
+            for m in m_gold:
+                st.markdown(f'<div class="success-box">{m}</div>', unsafe_allow_html=True)
         with t2:
-            for m in get_matches(True): st.info(m)
+            m_dia = get_matches(True)
+            for m in m_dia:
+                st.markdown(f'<div class="success-box" style="border-color: #3b82f6;">{m}</div>', unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Daten-Fehler: {e}")
