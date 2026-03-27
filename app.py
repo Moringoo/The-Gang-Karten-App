@@ -17,67 +17,81 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. STYLING ---
+# --- 3. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
-    .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 25px; }
-    .prio-card { background-color: #1e293b; border-left: 5px solid #ef4444; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
+    .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
 try:
-    # Daten laden und Namen-Fix (Male/Männlich)
+    # Daten laden - OHNE automatische Sortierung
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
     df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "")]
+    
+    # "Male" Fix bleibt drin, damit der Fehler nicht wiederkommt
     df_raw.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
     
-    spieler_namen = sorted(df_raw.iloc[:, 0].unique().tolist())
+    # Namen in der Reihenfolge des Sheets (Original-Reihenfolge)
+    spieler_namen = df_raw.iloc[:, 0].unique().tolist()
 
-    st.markdown('<p class="main-title">💀 THE GANG: HQ</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">💀 THE GANG: TAUSCH-ZENTRALE</p>', unsafe_allow_html=True)
 
-    # --- BEREICH 1: SCHNELLE EINGABE ---
-    with st.container():
-        st.markdown("### 📝 KARTEN-UPDATE")
-        c1, c2 = st.columns(2)
-        n_sel = c1.selectbox("Spieler wählen", ["Wählen..."] + spieler_namen)
-        d_sel = c2.selectbox("Deck wählen", list(range(1, 16)))
+    # --- BEREICH 1: KARTEN-EINGABE ---
+    st.markdown("### 📝 KARTEN AKTUALISIEREN")
+    col1, col2 = st.columns(2)
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen)
+    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)))
+    
+    if n_sel != "Wählen...":
+        s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
+        start_c = 1 + ((d_sel - 1) * 9)
+        vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
         
-        if n_sel != "Wählen...":
-            s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
-            start_c = 1 + ((d_sel - 1) * 9)
+        # 3x3 Raster - Streng sortiert von 1 bis 9
+        neue_werte = [0] * 9
+        r1 = st.columns(3)
+        r2 = st.columns(3)
+        r3 = st.columns(3)
+        all_cols = r1 + r2 + r3
+        
+        for i in range(9):
+            with all_cols[i]:
+                neue_werte[i] = st.number_input(f"K{i+1}", 0, 9, value=vals[i], key=f"inp_{n_sel}_{d_sel}_{i}")
+        
+        if st.button("🚀 ÄNDERUNGEN SPEICHERN"):
+            # Werte in Text umwandeln für die API
+            werte_str = ",".join([str(int(v)) for v in neue_werte])
+            res = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             
-            # Aktuelle Werte aus dem Sheet laden
-            aktuelle_werte = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
-            
-            # 3x3 Raster für die Eingabe
-            neue_werte = []
-            cols = st.columns(3)
-            for i in range(9):
-                with cols[i % 3]:
-                    v = st.number_input(f"Karte {i+1}", 0, 9, value=aktuelle_werte[i], key=f"k_{i}")
-                    neue_werte.append(str(int(v)))
-            
-            if st.button("🚀 JETZT SPEICHERN", use_container_width=True):
-                with st.spinner("Wird übertragen..."):
-                    requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": ",".join(neue_werte)})
-                    st.success(f"Check! Deck {d_sel} für {n_sel} ist aktuell.")
-                    st.rerun()
+            # Erfolgseffekt!
+            st.balloons()
+            st.success(f"Daten für {n_sel} wurden übertragen!")
+            # Kleiner Delay damit man die Ballons sieht, dann Refresh
+            import time
+            time.sleep(2)
+            st.rerun()
 
-    st.markdown("---")
+    st.markdown("<hr>", unsafe_allow_html=True)
 
-    # --- BEREICH 2: AUTOMATISCHE ANALYSE ---
-    pw = st.text_input("Admin-Passwort", type="password")
-    if pw == ADMIN_PASSWORT:
-        st.markdown("### 🎯 EMPFOHLENE TAUSCHE")
+    # --- BEREICH 2: AUTOMATISCHE TAUSCHANALYSE ---
+    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
+        st.markdown("### 🕵️‍♂️ BESTE TAUSCH-OPTIONEN")
         
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
-                # Fortschritt berechnen
-                besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc + i]) > 0)
+                
+                bz = 0
+                dia_count = 0
+                for i in range(9):
+                    cn = df_raw.columns[sc + i]
+                    val = safe_int(row.iloc[sc + i])
+                    if val > 0: bz += 1
+                    if "(D)" in cn: dia_count += 1
                 
                 for i in range(9):
                     cn = df_raw.columns[sc + i]
@@ -85,32 +99,38 @@ try:
                     if val >= 2:
                         gebot.append({"s": sp, "k": cn})
                     elif val == 0:
-                        bedarf.append({"s": sp, "k": cn, "f": besitz, "did": f"{sp}_D{d}"})
+                        bedarf.append({
+                            "s": sp, 
+                            "k": cn, 
+                            "f": bz, 
+                            "d_val": dia_count,
+                            "did": f"{sp}_D{d}"
+                        })
 
-        # Finisher (8/9) zuerst
-        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['did']), reverse=True)
+        # Sortierung: Finisher (8/9) mit Diamanten-Fokus
+        bedarf = sorted(bedarf, key=lambda x: (x['f'] == 8, x['d_val'], x['f']), reverse=True)
         
-        def get_matches(is_dia):
+        def get_matches(is_dia_tab):
             res, weg = [], set()
             fort_map = {b['did']: b['f'] for b in bedarf}
             for b in bedarf:
-                if (("(D)" in b["k"]) == is_dia):
+                if (("(D)" in b["k"]) == is_dia_tab):
                     for g in gebot:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
                             akt = fort_map[b['did']]
-                            # Optische Hervorhebung für Finisher
-                            prefix = "🚨 **FINISHER!**" if akt == 8 else f"({akt}/9)"
-                            res.append(f"{prefix} {g['s']} ➔ {b['s']} ({b['k']})")
+                            label = "**🚨 FINISHER!**" if akt == 8 else f"({akt}/9)"
+                            res.append(f"{label} {g['s']} ➔ {b['s']} ({g['k']})")
                             fort_map[b['did']] += 1
                             weg.add(g["s"])
                             break
             return res
 
-        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
+        t1, t2 = st.tabs(["🌕 GOLD-KARTEN", "💎 DIAMANT-KARTEN"])
         with t1:
             for m in get_matches(False): st.success(m)
         with t2:
             for m in get_matches(True): st.info(m)
 
 except Exception as e:
-    st.error(f"Hinweis: {e}")
+    st.error(f"Daten-Fehler: {e}")
+
