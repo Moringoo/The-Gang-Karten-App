@@ -26,14 +26,19 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 try:
-    # Daten laden - OHNE automatische Sortierung
+    # Daten laden
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
-    df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "")]
     
-    # "Male" Fix bleibt drin, damit der Fehler nicht wiederkommt
+    # FILTER: Leere Zeilen UND Platzhalter "Leer" entfernen
+    df_raw = df_raw[df_raw.iloc[:, 0].notna()]
+    df_raw = df_raw[df_raw.iloc[:, 0].str.strip() != ""]
+    # Entferne "Leer" (ignoriert Groß-/Kleinschreibung)
+    df_raw = df_raw[~df_raw.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
+    
+    # "Male" Fix (Excel-Korrektur)
     df_raw.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
     
-    # Namen in der Reihenfolge des Sheets (Original-Reihenfolge)
+    # Namen in der Original-Reihenfolge aus dem Sheet
     spieler_namen = df_raw.iloc[:, 0].unique().tolist()
 
     st.markdown('<p class="main-title">💀 THE GANG: TAUSCH-ZENTRALE</p>', unsafe_allow_html=True)
@@ -51,24 +56,19 @@ try:
         
         # 3x3 Raster - Streng sortiert von 1 bis 9
         neue_werte = [0] * 9
-        r1 = st.columns(3)
-        r2 = st.columns(3)
-        r3 = st.columns(3)
-        all_cols = r1 + r2 + r3
+        all_cols = st.columns(3) + st.columns(3) + st.columns(3)
         
         for i in range(9):
             with all_cols[i]:
                 neue_werte[i] = st.number_input(f"K{i+1}", 0, 9, value=vals[i], key=f"inp_{n_sel}_{d_sel}_{i}")
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN"):
-            # Werte in Text umwandeln für die API
             werte_str = ",".join([str(int(v)) for v in neue_werte])
-            res = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
+            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             
             # Erfolgseffekt!
             st.balloons()
-            st.success(f"Daten für {n_sel} wurden übertragen!")
-            # Kleiner Delay damit man die Ballons sieht, dann Refresh
+            st.success(f"Check! Die Karten für {n_sel} wurden aktualisiert.")
             import time
             time.sleep(2)
             st.rerun()
@@ -107,7 +107,7 @@ try:
                             "did": f"{sp}_D{d}"
                         })
 
-        # Sortierung: Finisher (8/9) mit Diamanten-Fokus
+        # Sortierung: Finisher (8/9) mit Diamanten-Gewichtung
         bedarf = sorted(bedarf, key=lambda x: (x['f'] == 8, x['d_val'], x['f']), reverse=True)
         
         def get_matches(is_dia_tab):
@@ -133,4 +133,3 @@ try:
 
 except Exception as e:
     st.error(f"Daten-Fehler: {e}")
-
