@@ -29,16 +29,15 @@ try:
     # Daten laden
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
     
-    # FILTER: Leere Zeilen UND Platzhalter "Leer" entfernen
+    # FILTER: Leere Zeilen UND "Leer" entfernen
     df_raw = df_raw[df_raw.iloc[:, 0].notna()]
     df_raw = df_raw[df_raw.iloc[:, 0].str.strip() != ""]
-    # Entferne "Leer" (ignoriert Groß-/Kleinschreibung)
     df_raw = df_raw[~df_raw.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
     
-    # "Male" Fix (Excel-Korrektur)
+    # "Male" Fix
     df_raw.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
     
-    # Namen in der Original-Reihenfolge aus dem Sheet
+    # Namen in Original-Reihenfolge
     spieler_namen = df_raw.iloc[:, 0].unique().tolist()
 
     st.markdown('<p class="main-title">💀 THE GANG: TAUSCH-ZENTRALE</p>', unsafe_allow_html=True)
@@ -54,10 +53,8 @@ try:
         start_c = 1 + ((d_sel - 1) * 9)
         vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
         
-        # 3x3 Raster - Streng sortiert von 1 bis 9
         neue_werte = [0] * 9
         all_cols = st.columns(3) + st.columns(3) + st.columns(3)
-        
         for i in range(9):
             with all_cols[i]:
                 neue_werte[i] = st.number_input(f"K{i+1}", 0, 9, value=vals[i], key=f"inp_{n_sel}_{d_sel}_{i}")
@@ -65,8 +62,6 @@ try:
         if st.button("🚀 ÄNDERUNGEN SPEICHERN"):
             werte_str = ",".join([str(int(v)) for v in neue_werte])
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
-            
-            # Erfolgseffekt!
             st.balloons()
             st.success(f"Check! Die Karten für {n_sel} wurden aktualisiert.")
             import time
@@ -102,13 +97,15 @@ try:
                         bedarf.append({
                             "s": sp, 
                             "k": cn, 
-                            "f": bz, 
-                            "d_val": dia_count,
+                            "f": bz,      # Aktueller Fortschritt (z.B. 8)
+                            "d_val": dia_count, # Anzahl Diamanten im Deck
                             "did": f"{sp}_D{d}"
                         })
 
-        # Sortierung: Finisher (8/9) mit Diamanten-Gewichtung
-        bedarf = sorted(bedarf, key=lambda x: (x['f'] == 8, x['d_val'], x['f']), reverse=True)
+        # --- DIE NEUE SORTIER-LOGIK ---
+        # 1. Sortiert nach Fortschritt (f) absteigend (8, 7, 6...)
+        # 2. Wenn f gleich ist, sortiert nach Diamanten (d_val) absteigend
+        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d_val']), reverse=True)
         
         def get_matches(is_dia_tab):
             res, weg = [], set()
@@ -118,6 +115,7 @@ try:
                     for g in gebot:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
                             akt = fort_map[b['did']]
+                            # Markierung nur bei echten Finishern
                             label = "**🚨 FINISHER!**" if akt == 8 else f"({akt}/9)"
                             res.append(f"{label} {g['s']} ➔ {b['s']} ({g['k']})")
                             fort_map[b['did']] += 1
