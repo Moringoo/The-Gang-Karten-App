@@ -18,15 +18,19 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. SESSION STATE ---
 if "form_iter" not in st.session_state:
     st.session_state.form_iter = 0
 
+# Merker für die Bestätigung der Zahlenkette
+if "last_chain" not in st.session_state:
+    st.session_state.last_chain = None
+
 def trigger_reset():
     st.session_state.form_iter += 1
+    st.session_state.last_chain = None
     for i in range(9):
-        if f"voice_val_{i}" in st.session_state:
-            del st.session_state[f"voice_val_{i}"]
+        if f"v_val_{i}" in st.session_state:
+            del st.session_state[f"v_val_{i}"]
 
 # --- 4. DATEN LADEN ---
 def load_data():
@@ -34,16 +38,14 @@ def load_data():
         url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
         df = pd.read_csv(url, dtype={0: str})
         df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
-        df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
         return df
     except Exception as e:
         st.error(f"Download-Fehler: {e}")
         return None
 
 # --- 5. DESIGN ---
-st.markdown("<style>.stApp { background-color: #0e1117; color: white; } .voice-area { background-color: #1e293b; padding: 15px; border-radius: 10px; border: 2px solid #3b82f6; }</style>", unsafe_allow_html=True)
+st.markdown("<style>.stApp { background-color: #0e1117; color: white; } .voice-box { background-color: #262730; padding: 20px; border-radius: 15px; border: 2px solid #fbbf24; margin-bottom: 20px; }</style>", unsafe_allow_html=True)
 
-# --- 6. LOGIK ---
 df = load_data()
 
 if df is not None:
@@ -59,40 +61,52 @@ if df is not None:
         start_c = 1 + ((d_sel - 1) * 9)
         db_vals = [safe_int(sz.iloc[0, start_c + i]) for i in range(9)]
 
-        st.markdown('<div class="voice-area">', unsafe_allow_html=True)
-        v_in = st.text_input("Zahlenkette (9 Ziffern):", key=f"v_{st.session_state.form_iter}")
+        # VOICE AREA
+        st.markdown('<div class="voice-box">', unsafe_allow_html=True)
+        v_in = st.text_input("Zahlenkette diktieren/tippen & ENTER:", key=f"v_field_{st.session_state.form_iter}")
+        
         if v_in:
             digs = re.findall(r'\d', v_in)
             if len(digs) >= 9:
-                for i in range(9): st.session_state[f"voice_val_{i}"] = int(digs[i])
+                for i in range(9): st.session_state[f"v_val_{i}"] = int(digs[i])
+                st.session_state.last_chain = " | ".join(digs[:9])
                 st.session_state.form_iter += 1
                 st.rerun()
+            elif len(digs) > 0:
+                st.warning(f"⚠️ Nur {len(digs)} Zahlen erkannt. Bitte 9 Zahlen sprechen.")
+        
+        # Bestätigung anzeigen, wenn gerade eine Kette geladen wurde
+        if st.session_state.last_chain:
+            st.success(f"✅ Kette erkannt: {st.session_state.last_chain}")
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # 3x3 RASTER
         neue_werte = []
         cols = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with cols[i]:
-                cur = st.session_state.get(f"voice_val_{i}", db_vals[i])
+                cur = st.session_state.get(f"v_val_{i}", db_vals[i])
                 v = st.number_input(f"K{i+1}", 0, 9, value=cur, key=f"k_{i}_{st.session_state.form_iter}")
                 neue_werte.append(v)
         
-        if st.button("🚀 SPEICHERN", use_container_width=True):
+        if st.button("🚀 JETZT INS SHEET SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
-            with st.spinner("Sende..."):
+            with st.spinner("Sende Daten..."):
                 try:
-                    r = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=10)
+                    r = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
                     if r.status_code == 200:
-                        st.success("Gespeichert!")
+                        st.balloons()
+                        st.success("✅ Erledigt! Google Sheet ist aktuell.")
                         trigger_reset()
                         time.sleep(1)
                         st.rerun()
                     else: st.error(f"Fehler: {r.status_code}")
-                except Exception as e: st.error(f"Verbindung weg: {e}")
+                except Exception as e: st.error(f"Verbindung fehlgeschlagen: {e}")
 
+    # ADMIN BEREICH & TAUSCHANALYSE
     st.markdown("---")
-    if st.text_input("Admin", type="password") == ADMIN_PASSWORT:
-        st.markdown("### 🕵️ Tausch-Check")
+    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
+        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK (Live-Daten)")
         gbt, bdr = [], []
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
