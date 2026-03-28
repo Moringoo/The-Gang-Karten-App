@@ -29,9 +29,28 @@ def load_data(ts):
 df = load_data(int(time.time() / 5))
 
 if df is not None:
-    namen = df.iloc[:, 0].unique().tolist()
     st.title("💀 THE GANG HQ")
+
+    # --- NEU: DER FINISHER-RADAR (GANZ OBEN) ---
+    st.markdown("### 🎯 FINISHER-RADAR (Fast fertig)")
+    finisher_found = False
+    for _, row in df.iterrows():
+        sp_name = str(row.iloc[0]).strip()
+        for d in range(1, 16):
+            sc = 1 + ((d - 1) * 9)
+            besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+            # Zeige nur Decks an, die fast fertig sind (7, 8 oder 9 von 9)
+            if 7 <= besitz <= 8:
+                st.warning(f"🔥 **{sp_name}** braucht nur noch **{9-besitz}** Karte(n) in **Deck {d}** ({besitz}/9)")
+                finisher_found = True
     
+    if not finisher_found:
+        st.info("Aktuell niemand bei 7/9 oder 8/9.")
+    
+    st.markdown("---")
+
+    # --- BEARBEITUNGS-BEREICH ---
+    namen = df.iloc[:, 0].unique().tolist()
     col1, col2 = st.columns(2)
     with col1:
         n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
@@ -43,9 +62,7 @@ if df is not None:
         start_c = 1 + ((d_sel - 1) * 9)
         db_vals = [safe_int(sz.iloc[0, start_c + i]) for i in range(9)]
         
-        # FINISHER ANZEIGE OBEN
-        besitz_aktuell = sum(1 for v in db_vals if v > 0)
-        st.subheader(f"🃏 Deck {d_sel} | Fortschritt: {besitz_aktuell}/9 Karten")
+        st.subheader(f"🃏 Deck {d_sel} bearbeiten")
         
         neue_werte = []
         for row_idx in range(3):
@@ -75,7 +92,7 @@ if df is not None:
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     
     if pwd == ADMIN_PASSWORT:
-        st.markdown("### 🕵️‍♂️ FINISHER-CHECK & TAUSCH")
+        st.markdown("### 🕵️‍♂️ DETAILLIERTE TAUSCHVORSCHLÄGE")
         gbt, bdr = [], []
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
@@ -97,7 +114,6 @@ if df is not None:
                     if (("(D)" in b["k"]) == is_diamant):
                         for g in gbt:
                             if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                                # HIER STEHT DER FINISHER STATUS DEUTLICH
                                 st.write(f"**{g['k']}**: {g['s']} ➔ {b['s']} **(Status: {b['f']}/9)**")
                                 weg.add(g["s"])
                                 found_any = True
