@@ -28,14 +28,18 @@ def trigger_reset():
         if f"temp_k_{i}" in st.session_state:
             del st.session_state[f"temp_k_{i}"]
 
-# --- 4. DATEN LADEN ---
+# --- 4. DATEN LADEN (ANTI-CACHE) ---
 def load_data():
-    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
-    df = pd.read_csv(url, dtype={0: str})
-    df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
-    df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
-    df.iloc[:, 0] = df.iloc[:, 0].str.strip()
-    return df
+    try:
+        url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
+        df = pd.read_csv(url, dtype={0: str})
+        df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
+        df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
+        df.iloc[:, 0] = df.iloc[:, 0].str.strip()
+        return df
+    except Exception as e:
+        st.error(f"Fehler beim Laden der Daten: {e}")
+        return None
 
 # --- 5. DESIGN ---
 st.markdown("""
@@ -46,14 +50,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 6. HAUPT-LOGIK ---
-try:
-    df_aktuell = load_data()
+# --- 6. HAUPT-PROGRAMM ---
+df_aktuell = load_data()
+
+if df_aktuell is not None:
     spieler_namen = sorted(df_aktuell.iloc[:, 0].unique().tolist())
-
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
-    st.markdown("### 📝 KARTEN AKTUALISIEREN")
 
+    # --- EINGABE-BEREICH ---
+    st.markdown("### 📝 KARTEN AKTUALISIEREN")
     col1, col2 = st.columns(2)
     n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=trigger_reset)
     d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=trigger_reset)
@@ -67,7 +72,7 @@ try:
 
             st.markdown('<div class="voice-area">', unsafe_allow_html=True)
             st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
-            v_in = st.text_input("9 Zahlen sprechen/tippen & ENTER:", key=f"v_field_{st.session_state.form_iter}")
+            v_in = st.text_input("Zahlenkette eingeben & ENTER:", key=f"v_field_{st.session_state.form_iter}")
             
             if v_in:
                 all_digits = re.findall(r'\d', v_in) 
@@ -95,45 +100,34 @@ try:
                 trigger_reset()
                 time.sleep(1)
                 st.rerun()
-        else:
-            st.error("Spieler nicht gefunden.")
 
-    # --- ANALYSE ---
+    # --- ANALYSE-BEREICH ---
     st.markdown("<hr>", unsafe_allow_html=True)
-    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
+    pw_input = st.text_input("Admin-Passwort", type="password")
+    
+    if pw_input == ADMIN_PASSWORT:
         if st.button("🔄 DATEN ERNEUT LADEN"):
             st.rerun()
             
         st.markdown("### 🕵️‍♂️ TAUSCH-CHECK (Live-Daten)")
         gebot, bedarf = [], []
+        
         for _, row in df_aktuell.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
                 bz, dia = 0, 0
+                # Karten-Status für das Deck prüfen
                 for i in range(9):
-                    cn = df_aktuell.columns[sc + i]
                     val = safe_int(row.iloc[sc + i])
                     if val > 0: bz += 1
-                    if "(D)" in cn: dia += 1
+                    if "(D)" in df_aktuell.columns[sc + i]: dia += 1
+                
+                # Gebote und Bedarfe sammeln
                 for i in range(9):
                     cn = df_aktuell.columns[sc + i]
                     val = safe_int(row.iloc[sc + i])
-                    if val >= 2: gebot.append({"s": sp, "k": cn})
-                    elif val == 0: bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia})
-
-        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
-        
-        def get_matches(is_dia):
-            res, weg = [], set()
-            for b in bedarf:
-                if (("(D)" in b["k"]) == is_dia):
-                    for g in gebot:
-                        if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            l = "**🚨 FINISHER!**" if b['f'] == 8 else f"({b['f']}/9)"
-                            res.append(f"{l} {g['s']} ➔ {b['s']} ({g['k']})")
-                            weg.add(g["s"])
-                            break
-            return res
-
-        t1
+                    if val >= 2:
+                        gebot.append({"s": sp, "k": cn})
+                    elif val == 0:
+                        bedarf.append({"s": sp, "
