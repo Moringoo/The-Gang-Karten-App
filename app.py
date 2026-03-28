@@ -47,23 +47,13 @@ if df is not None:
         
         # Das 3x3 Raster
         neue_werte = []
-        c = st.columns(3)
-        for i in range(3):
-            with c[i]:
-                v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
-                neue_werte.append(v)
-        
-        c = st.columns(3)
-        for i in range(3, 6):
-            with c[i-3]:
-                v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
-                neue_werte.append(v)
-                
-        c = st.columns(3)
-        for i in range(6, 9):
-            with c[i-6]:
-                v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
-                neue_werte.append(v)
+        for row_idx in range(3):
+            cols = st.columns(3)
+            for col_idx in range(3):
+                i = row_idx * 3 + col_idx
+                with cols[col_idx]:
+                    v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
+                    neue_werte.append(v)
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
@@ -73,53 +63,4 @@ if df is not None:
                     if "Erfolg" in r.text:
                         st.balloons()
                         st.success("✅ Erledigt!")
-                        time.sleep(1)
-                        st.cache_data.clear()
-                        st.rerun()
-                    else: st.error(f"Fehler: {r.text}")
-                except Exception as e: st.error(f"Verbindung fehlgeschlagen: {e}")
-
-    # --- ADMIN BEREICH (TAUSCHANALYSE) ---
-    st.markdown("---")
-    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
-    
-    if pwd == ADMIN_PASSWORT:
-        st.markdown("### 🕵️‍♂️ AKTUELLE TAUSCHVORSCHLÄGE")
-        
-        gbt, bdr = [], []
-        for _, row in df.iterrows():
-            sp = str(row.iloc[0]).strip()
-            for d in range(1, 16):
-                sc = 1 + ((d - 1) * 9)
-                # Wie viele Karten hat der Spieler in diesem Deck schon?
-                besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
-                
-                for i in range(9):
-                    cn = df.columns[sc+i]
-                    val = safe_int(row.iloc[sc+i])
-                    
-                    if val >= 2: # Spieler hat Karte doppelt (Gibt ab)
-                        gbt.append({"s": sp, "k": cn})
-                    elif val == 0: # Spieler hat Karte gar nicht (Braucht sie)
-                        bdr.append({"s": sp, "k": cn, "f": besitz})
-
-        # Sortieren nach Fortschritt (wer fast fertig ist, kommt zuerst)
-        bdr = sorted(bdr, key=lambda x: x['f'], reverse=True)
-        
-        t1, t2 = st.tabs(["🌕 Gold-Karten", "💎 Diamant-Karten"])
-        
-        for tab, is_diamant in zip([t1, t2], [False, True]):
-            with tab:
-                weg = set()
-                found_any = False
-                for b in bdr:
-                    # Filter nach (D) für Diamant
-                    if (("(D)" in b["k"]) == is_diamant):
-                        for g in gbt:
-                            if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                                st.write(f"**{g['k']}**: {g['s']} ➔ {b['s']} ({b['f']}/9)")
-                                weg.add(g["s"])
-                                found_any = True
-                                break
-                if not found_any:
-                    st.write("Aktuell keine Tauschangebote gefunden.")
+                        time.sleep(1
