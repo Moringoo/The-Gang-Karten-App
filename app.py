@@ -19,24 +19,12 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-def text_to_numbers(text):
-    d = {"null": "0", "eins": "1", "zwei": "2", "drei": "3", "vier": "4", 
-         "fünf": "5", "sechs": "6", "sieben": "7", "acht": "8", "neun": "9"}
-    text = text.lower()
-    for word, num in d.items():
-        text = text.replace(word, num)
-    return text
-
-# --- 3. SESSION STATE INITIALISIEREN ---
-if 'karten_werte' not in st.session_state:
-    st.session_state.karten_werte = [0] * 9
-
-# --- 4. DESIGN ---
+# --- 3. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 20px; }
-    .voice-hint { background-color: #262730; padding: 10px; border-radius: 5px; border-left: 5px solid #3b82f6; margin-bottom: 15px; }
+    .voice-area { background-color: #1e293b; padding: 15px; border-radius: 10px; border: 2px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -51,37 +39,40 @@ try:
 
     # --- BEREICH 1: KARTEN-EINGABE ---
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
+
     col1, col2 = st.columns(2)
-    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, key="name_select")
-    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), key="deck_select")
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen)
+    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)))
     
     if n_sel != "Wählen...":
-        # Initial-Werte laden, falls noch nicht geschehen oder User gewechselt hat
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
         db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
-        
-        # Spracheingabe-Logik
-        st.markdown('<div class="voice-hint">🎙️ <b>Spracheingabe:</b> Zahlen sprechen und <b>Enter</b> drücken.</div>', unsafe_allow_html=True)
-        
-        def process_voice():
-            v_input = st.session_state.voice_input_field
-            if v_input:
-                clean = text_to_numbers(v_input)
-                nums = re.findall(r'\d+', clean)
-                if len(nums) >= 9:
-                    for i in range(9):
-                        st.session_state[f"k_val_{i}"] = int(nums[i])
-                    st.toast("✅ Karten verteilt!", icon="🎯")
 
-        st.text_input("Hier reinsprechen...", key="voice_input_field", on_change=process_voice)
+        # --- VERBESSERTE VOICE LOGIK FÜR ZAHLENKETTEN ---
+        st.markdown('<div class="voice-area">', unsafe_allow_html=True)
+        st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
+        v_in = st.text_input("Spreche 9 Zahlen (z.B. 101131102) und drücke ENTER:", key="voice_box")
+        
+        if v_in:
+            # RE-LOGIK: Findet jede einzelne Ziffer (0-9), auch wenn sie direkt hintereinander stehen
+            all_digits = re.findall(r'\d', v_in) 
+            
+            if len(all_digits) >= 9:
+                for i in range(9):
+                    # Schreibe die Ziffern direkt in den Session State der Number Inputs
+                    st.session_state[f"k_val_{i}"] = int(all_digits[i])
+                st.success(f"✅ Kette erkannt: {' | '.join(all_digits[:9])}")
+            else:
+                st.warning(f"⚠️ Kette zu kurz! Nur {len(all_digits)} von 9 Zahlen erkannt.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3x3 Raster
+        # 3x3 Raster - Die Inputs nutzen die Keys für das Update
         neue_werte = []
-        cols = st.columns(3) + st.columns(3) + st.columns(3)
+        c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
-            with cols[i]:
-                # Wir nutzen die DB-Werte als Default, falls im State noch nichts steht
+            with c[i]:
+                # Wir setzen den Initialwert aus der DB, aber lassen ihn vom State überschreiben
                 val = st.number_input(f"K{i+1}", 0, 9, value=db_vals[i], key=f"k_val_{i}")
                 neue_werte.append(val)
         
@@ -89,7 +80,7 @@ try:
             werte_str = ",".join([str(int(v)) for v in neue_werte])
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
-            st.success("Gespeichert!")
+            st.success("Erfolgreich gespeichert!")
             time.sleep(1)
             st.rerun()
 
@@ -114,19 +105,18 @@ try:
                     if val >= 2: gebot.append({"s": sp, "k": cn})
                     elif val == 0: bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia, "did": f"{sp}_D{d}"})
 
+        # Sortierung: 8/9, 7/9... dann nach Diamanten
         bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
         
         def get_matches(is_dia):
             res, weg = [], set()
-            f_map = {b['did']: b['f'] for b in bedarf}
             for b in bedarf:
                 if (("(D)" in b["k"]) == is_dia):
                     for g in gebot:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            akt = f_map[b['did']]
-                            l = "**🚨 FINISHER!**" if akt == 8 else f"({akt}/9)"
+                            l = "**🚨 FINISHER!**" if b['f'] == 8 else f"({b['f']}/9)"
                             res.append(f"{l} {g['s']} ➔ {b['s']} ({g['k']})")
-                            f_map[b['did']] += 1; weg.add(g["s"])
+                            weg.add(g["s"])
                             break
             return res
 
