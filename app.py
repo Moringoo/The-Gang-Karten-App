@@ -38,7 +38,7 @@ def load_data():
         df.iloc[:, 0] = df.iloc[:, 0].str.strip()
         return df
     except Exception as e:
-        st.error(f"Fehler beim Laden der Daten: {e}")
+        st.error(f"Fehler beim Laden: {e}")
         return None
 
 # --- 5. DESIGN ---
@@ -50,14 +50,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 6. HAUPT-PROGRAMM ---
+# --- 6. HAUPT-LOGIK ---
 df_aktuell = load_data()
 
 if df_aktuell is not None:
     spieler_namen = sorted(df_aktuell.iloc[:, 0].unique().tolist())
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
 
-    # --- EINGABE-BEREICH ---
+    # --- EINGABE ---
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
     col1, col2 = st.columns(2)
     n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=trigger_reset)
@@ -65,14 +65,13 @@ if df_aktuell is not None:
     
     if n_sel != "Wählen...":
         s_zeile = df_aktuell[df_aktuell.iloc[:, 0] == n_sel]
-        
         if len(s_zeile) > 0:
             start_c = 1 + ((d_sel - 1) * 9)
             db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
 
             st.markdown('<div class="voice-area">', unsafe_allow_html=True)
             st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
-            v_in = st.text_input("Zahlenkette eingeben & ENTER:", key=f"v_field_{st.session_state.form_iter}")
+            v_in = st.text_input("9 Zahlen sprechen/tippen & ENTER:", key=f"v_field_{st.session_state.form_iter}")
             
             if v_in:
                 all_digits = re.findall(r'\d', v_in) 
@@ -96,12 +95,12 @@ if df_aktuell is not None:
                 werte_str = ",".join([str(int(v)) for v in neue_werte])
                 requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
                 st.balloons()
-                st.success("Gespeichert!")
+                st.success("Erfolgreich gespeichert!")
                 trigger_reset()
                 time.sleep(1)
                 st.rerun()
 
-    # --- ANALYSE-BEREICH ---
+    # --- ANALYSE ---
     st.markdown("<hr>", unsafe_allow_html=True)
     pw_input = st.text_input("Admin-Passwort", type="password")
     
@@ -117,17 +116,34 @@ if df_aktuell is not None:
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
                 bz, dia = 0, 0
-                # Karten-Status für das Deck prüfen
                 for i in range(9):
                     val = safe_int(row.iloc[sc + i])
                     if val > 0: bz += 1
                     if "(D)" in df_aktuell.columns[sc + i]: dia += 1
-                
-                # Gebote und Bedarfe sammeln
                 for i in range(9):
                     cn = df_aktuell.columns[sc + i]
-                    val = safe_int(row.iloc[sc + i])
-                    if val >= 2:
+                    v_val = safe_int(row.iloc[sc + i])
+                    if v_val >= 2:
                         gebot.append({"s": sp, "k": cn})
-                    elif val == 0:
-                        bedarf.append({"s": sp, "
+                    elif v_val == 0:
+                        bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia})
+
+        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
+        
+        def get_matches(is_dia):
+            res, weg = [], set()
+            for b in bedarf:
+                if (("(D)" in b["k"]) == is_dia):
+                    for g in gebot:
+                        if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
+                            l = "**🚨 FINISHER!**" if b['f'] == 8 else f"({b['f']}/9)"
+                            res.append(f"{l} {g['s']} ➔ {b['s']} ({g['k']})")
+                            weg.add(g["s"])
+                            break
+            return res
+
+        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
+        with t1:
+            for m in get_matches(False): st.success(m)
+        with t2:
+            for m in get_matches(True): st.info(m)
