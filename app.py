@@ -9,8 +9,6 @@ st.set_page_config(page_title="The Gang HQ Final", page_icon="💀", layout="wid
 
 # --- 2. KONFIGURATION ---
 GID = "2025591169"
-# Zusatz "?cache=0" hilft manchmal, Browser-Caching zu umgehen
-SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&timestamp={int(time.time())}"
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
@@ -26,18 +24,22 @@ if "form_iter" not in st.session_state:
 
 def trigger_reset():
     st.session_state.form_iter += 1
+    # Sprach-Zwischenspeicher leeren
     for i in range(9):
         if f"temp_k_{i}" in st.session_state:
             del st.session_state[f"temp_k_{i}"]
 
 # --- 4. DATEN LADEN (OHNE CACHE) ---
 def load_data():
-    # Wir hängen einen Zeitstempel an die URL, damit Google uns immer die echten Daten schickt
+    # Zeitstempel verhindert, dass Google alte Daten aus dem Cache schickt
     url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
     df = pd.read_csv(url, dtype={0: str})
+    # Filter leere Zeilen
     df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
+    # Filter Platzhalter
     df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
-    df.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
+    # Male Fix (Hier war der Fehler: df statt df_raw nutzen)
+    df.iloc[:, 0] = df.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
     return df
 
 # --- 5. DESIGN ---
@@ -50,21 +52,22 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 try:
-    df_raw = load_data()
-    spieler_namen = df_raw.iloc[:, 0].unique().tolist()
+    # Daten frisch ziehen
+    df_aktuell = load_data()
+    spieler_namen = df_aktuell.iloc[:, 0].unique().tolist()
 
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
 
-    # --- EINGABE-BEREICH ---
+    # --- BEREICH 1: EINGABE ---
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
     col1, col2 = st.columns(2)
     n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=trigger_reset)
     d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=trigger_reset)
     
     if n_sel != "Wählen...":
-        s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
+        s_zeile = df_aktuell[df_aktuell.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
-        # Frisch aus dem Sheet geladen:
+        # Aktuelle Werte aus dem Google Sheet
         db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
 
         st.markdown('<div class="voice-area">', unsafe_allow_html=True)
@@ -81,11 +84,12 @@ try:
                 st.warning(f"⚠️ Kette zu kurz ({len(all_digits)}/9).")
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # 3x3 Raster
         neue_werte = []
         c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with c[i]:
-                # Wenn Spracheingabe vorliegt, nimm diese, sonst ECHTE Sheet-Daten
+                # Spracheingabe hat Vorrang vor Sheet-Daten
                 current_val = st.session_state.get(f"temp_k_{i}", db_vals[i])
                 val = st.number_input(f"K{i+1}", 0, 9, value=current_val, key=f"widget_k_{i}_{st.session_state.form_iter}")
                 neue_werte.append(val)
@@ -94,54 +98,20 @@ try:
             werte_str = ",".join([str(int(v)) for v in neue_werte])
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
-            st.success("Gespeichert! Daten werden im Sheet aktualisiert.")
+            st.success("Erfolgreich gespeichert!")
             trigger_reset()
             time.sleep(2)
             st.rerun()
 
-    # --- ANALYSE BEREICH ---
+    # --- BEREICH 2: ANALYSE ---
     st.markdown("<hr>", unsafe_allow_html=True)
     if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        if st.button("🔄 DATEN JETZT ERNEUT LADEN"):
+        if st.button("🔄 DATEN ERNEUT LADEN"):
             st.rerun()
             
-        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK (Echte Sheet-Daten)")
+        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK (Live-Daten)")
         gebot, bedarf = [], []
-        for _, row in df_raw.iterrows():
+        for _, row in df_aktuell.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
-                sc = 1 + ((d - 1) * 9)
-                bz, dia = 0, 0
-                for i in range(9):
-                    cn = df_raw.columns[sc + i]
-                    val = safe_int(row.iloc[sc + i])
-                    if val > 0: bz += 1
-                    if "(D)" in cn: dia += 1
-                for i in range(9):
-                    cn = df_raw.columns[sc + i]
-                    val = safe_int(row.iloc[sc + i])
-                    if val >= 2: gebot.append({"s": sp, "k": cn})
-                    elif val == 0: bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia, "did": f"{sp}_D{d}"})
-
-        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
-        
-        def get_matches(is_dia):
-            res, weg = [], set()
-            for b in bedarf:
-                if (("(D)" in b["k"]) == is_dia):
-                    for g in gebot:
-                        if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            l = "**🚨 FINISHER!**" if b['f'] == 8 else f"({b['f']}/9)"
-                            res.append(f"{l} {g['s']} ➔ {b['s']} ({g['k']})")
-                            weg.add(g["s"])
-                            break
-            return res
-
-        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
-        with t1:
-            for m in get_matches(False): st.success(m)
-        with t2:
-            for m in get_matches(True): st.info(m)
-
-except Exception as e:
-    st.error(f"Fehler: {e}")
+                sc = 1 + ((d - 1
