@@ -45,7 +45,6 @@ if df is not None:
 
         st.markdown(f"### 🃏 Deck {d_sel} bearbeiten")
         
-        # Das 3x3 Raster
         neue_werte = []
         for row_idx in range(3):
             cols = st.columns(3)
@@ -57,10 +56,47 @@ if df is not None:
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
-            with st.spinner("Speichere im Google Sheet..."):
+            with st.spinner("Speichere..."):
                 try:
                     r = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
                     if "Erfolg" in r.text:
                         st.balloons()
                         st.success("✅ Erledigt!")
-                        time.sleep(1
+                        time.sleep(1) # HIER WAR DER FEHLER - JETZT KORREKT
+                        st.cache_data.clear()
+                        st.rerun()
+                    else: st.error(f"Fehler: {r.text}")
+                except Exception as e: st.error(f"Verbindung fehlgeschlagen: {e}")
+
+    # --- ADMIN BEREICH (TAUSCHANALYSE) ---
+    st.markdown("---")
+    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
+    
+    if pwd == ADMIN_PASSWORT:
+        st.markdown("### 🕵️‍♂️ AKTUELLE TAUSCHVORSCHLÄGE")
+        gbt, bdr = [], []
+        for _, row in df.iterrows():
+            sp = str(row.iloc[0]).strip()
+            for d in range(1, 16):
+                sc = 1 + ((d - 1) * 9)
+                besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                for i in range(9):
+                    cn = df.columns[sc+i]
+                    val = safe_int(row.iloc[sc+i])
+                    if val >= 2: gbt.append({"s": sp, "k": cn})
+                    elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz})
+
+        bdr = sorted(bdr, key=lambda x: x['f'], reverse=True)
+        t1, t2 = st.tabs(["🌕 Gold", "💎 Diamant"])
+        for tab, is_diamant in zip([t1, t2], [False, True]):
+            with tab:
+                weg, found_any = set(), False
+                for b in bdr:
+                    if (("(D)" in b["k"]) == is_diamant):
+                        for g in gbt:
+                            if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
+                                st.write(f"**{g['k']}**: {g['s']} ➔ {b['s']} `({b['f']}/9)`")
+                                weg.add(g["s"])
+                                found_any = True
+                                break
+                if not found_any: st.info("Keine Tausch-Angebote.")
