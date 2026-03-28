@@ -29,16 +29,12 @@ def trigger_reset():
         if f"temp_k_{i}" in st.session_state:
             del st.session_state[f"temp_k_{i}"]
 
-# --- 4. DATEN LADEN (OHNE CACHE) ---
+# --- 4. DATEN LADEN (ANTI-CACHE) ---
 def load_data():
-    # Zeitstempel verhindert, dass Google alte Daten aus dem Cache schickt
     url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
     df = pd.read_csv(url, dtype={0: str})
-    # Filter leere Zeilen
     df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
-    # Filter Platzhalter
     df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
-    # Male Fix (Hier war der Fehler: df statt df_raw nutzen)
     df.iloc[:, 0] = df.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
     return df
 
@@ -52,7 +48,6 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 try:
-    # Daten frisch ziehen
     df_aktuell = load_data()
     spieler_namen = df_aktuell.iloc[:, 0].unique().tolist()
 
@@ -67,7 +62,6 @@ try:
     if n_sel != "Wählen...":
         s_zeile = df_aktuell[df_aktuell.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
-        # Aktuelle Werte aus dem Google Sheet
         db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
 
         st.markdown('<div class="voice-area">', unsafe_allow_html=True)
@@ -84,34 +78,10 @@ try:
                 st.warning(f"⚠️ Kette zu kurz ({len(all_digits)}/9).")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3x3 Raster
         neue_werte = []
         c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with c[i]:
-                # Spracheingabe hat Vorrang vor Sheet-Daten
                 current_val = st.session_state.get(f"temp_k_{i}", db_vals[i])
                 val = st.number_input(f"K{i+1}", 0, 9, value=current_val, key=f"widget_k_{i}_{st.session_state.form_iter}")
-                neue_werte.append(val)
-        
-        if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
-            werte_str = ",".join([str(int(v)) for v in neue_werte])
-            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
-            st.balloons()
-            st.success("Erfolgreich gespeichert!")
-            trigger_reset()
-            time.sleep(2)
-            st.rerun()
-
-    # --- BEREICH 2: ANALYSE ---
-    st.markdown("<hr>", unsafe_allow_html=True)
-    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        if st.button("🔄 DATEN ERNEUT LADEN"):
-            st.rerun()
-            
-        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK (Live-Daten)")
-        gebot, bedarf = [], []
-        for _, row in df_aktuell.iterrows():
-            sp = str(row.iloc[0]).strip()
-            for d in range(1, 16):
-                sc = 1 + ((d - 1
+                ne
