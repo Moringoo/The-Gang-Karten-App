@@ -18,27 +18,25 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. SESSION STATE ---
+# --- 3. SESSION STATE INITIALISIERUNG ---
 if "form_iter" not in st.session_state:
     st.session_state.form_iter = 0
 
 def trigger_reset():
+    # Erhöht den Zähler, was alle Widgets mit diesem dynamischen Key zwingt, sich neu zu zeichnen
     st.session_state.form_iter += 1
+    # Löscht alle temporären Sprach-Eingaben
     for i in range(9):
-        if f"temp_k_{i}" in st.session_state:
-            del st.session_state[f"temp_k_{i}"]
+        if f"voice_val_{i}" in st.session_state:
+            del st.session_state[f"voice_val_{i}"]
 
-# --- 4. DATEN LADEN ---
+# --- 4. DATEN LADEN (ANTI-CACHE) ---
 def load_data():
-    try:
-        url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
-        df = pd.read_csv(url, dtype={0: str})
-        df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
-        df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
-        return df
-    except Exception as e:
-        st.error(f"Fehler beim Laden: {e}")
-        return None
+    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
+    df = pd.read_csv(url, dtype={0: str})
+    df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
+    df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
+    return df
 
 # --- 5. DESIGN ---
 st.markdown("""
@@ -53,9 +51,8 @@ st.markdown("""
 df_aktuell = load_data()
 
 if df_aktuell is not None:
-    # WICHTIG: Kein sorted() mehr, damit die Reihenfolge aus dem Sheet bleibt
+    # Namen in Sheet-Reihenfolge
     spieler_namen = df_aktuell.iloc[:, 0].unique().tolist()
-    
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
 
     # --- EINGABE ---
@@ -68,44 +65,48 @@ if df_aktuell is not None:
         s_zeile = df_aktuell[df_aktuell.iloc[:, 0] == n_sel]
         if len(s_zeile) > 0:
             start_c = 1 + ((d_sel - 1) * 9)
-            db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
+            # Stand aus dem Google Sheet
+            sheet_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
 
+            # VOICE-EINGABE
             st.markdown('<div class="voice-area">', unsafe_allow_html=True)
-            st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
-            v_in = st.text_input("9 Zahlen sprechen/tippen & ENTER:", key=f"v_field_{st.session_state.form_iter}")
+            v_input = st.text_input("Zahlenkette (z.B. 120012111) & ENTER:", key=f"v_input_{st.session_state.form_iter}")
             
-            if v_in:
-                all_digits = re.findall(r'\d', v_in) 
-                if len(all_digits) >= 9:
+            if v_input:
+                digits = re.findall(r'\d', v_input)
+                if len(digits) >= 9:
                     for i in range(9):
-                        st.session_state[f"temp_k_{i}"] = int(all_digits[i])
-                    st.success(f"✅ Kette erkannt: {' | '.join(all_digits[:9])}")
+                        st.session_state[f"voice_val_{i}"] = int(digits[i])
+                    st.success("✅ Kette übernommen! Prüfe die Zahlen unten.")
                 else:
-                    st.warning(f"⚠️ Kette zu kurz ({len(all_digits)}/9).")
+                    st.warning(f"⚠️ Nur {len(digits)} von 9 Zahlen erkannt.")
             st.markdown('</div>', unsafe_allow_html=True)
 
+            # 3x3 RASTER
             neue_werte = []
-            c = st.columns(3) + st.columns(3) + st.columns(3)
+            cols = st.columns(3) + st.columns(3) + st.columns(3)
+            
             for i in range(9):
-                with c[i]:
-                    current_val = st.session_state.get(f"temp_k_{i}", db_vals[i])
-                    val = st.number_input(f"K{i+1}", 0, 9, value=current_val, key=f"widget_k_{i}_{st.session_state.form_iter}")
-                    neue_werte.append(val)
+                with cols[i]:
+                    # PRIORITÄT: 1. Sprach-Eingabe (falls vorhanden), 2. Sheet-Wert
+                    display_val = st.session_state.get(f"voice_val_{i}", sheet_vals[i])
+                    
+                    # Widget erhält einen Key, der sich bei jedem Reset ändert
+                    res_val = st.number_input(f"K{i+1}", 0, 9, value=display_val, key=f"k_input_{i}_{st.session_state.form_iter}")
+                    neue_werte.append(res_val)
             
             if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
-                werte_str = ",".join([str(int(v)) for v in neue_werte])
+                werte_str = ",".join([str(v) for v in neue_werte])
                 requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
                 st.balloons()
-                st.success("Erfolgreich gespeichert!")
+                st.success("Gespeichert!")
                 trigger_reset()
                 time.sleep(1)
                 st.rerun()
 
     # --- ANALYSE ---
     st.markdown("<hr>", unsafe_allow_html=True)
-    pw_input = st.text_input("Admin-Passwort", type="password")
-    
-    if pw_input == ADMIN_PASSWORT:
+    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
         if st.button("🔄 DATEN ERNEUT LADEN"):
             st.rerun()
             
@@ -127,10 +128,8 @@ if df_aktuell is not None:
                     if v_val >= 2:
                         gebot.append({"s": sp, "k": cn})
                     elif v_val == 0:
-                        # Fortschritt (f) und Diamant-Anzahl (d) werden für die Sortierung mitgespeichert
                         bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia})
 
-        # Sortierung: Finisher (8/9 Karten) zuerst
         bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
         
         def get_matches(is_dia):
