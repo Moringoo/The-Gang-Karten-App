@@ -28,14 +28,13 @@ def trigger_reset():
         if f"temp_k_{i}" in st.session_state:
             del st.session_state[f"temp_k_{i}"]
 
-# --- 4. DATEN LADEN (ANTI-CACHE) ---
+# --- 4. DATEN LADEN ---
 def load_data():
     try:
         url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
         df = pd.read_csv(url, dtype={0: str})
         df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
         df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
-        df.iloc[:, 0] = df.iloc[:, 0].str.strip()
         return df
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
@@ -54,7 +53,9 @@ st.markdown("""
 df_aktuell = load_data()
 
 if df_aktuell is not None:
-    spieler_namen = sorted(df_aktuell.iloc[:, 0].unique().tolist())
+    # WICHTIG: Kein sorted() mehr, damit die Reihenfolge aus dem Sheet bleibt
+    spieler_namen = df_aktuell.iloc[:, 0].unique().tolist()
+    
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
 
     # --- EINGABE ---
@@ -126,8 +127,10 @@ if df_aktuell is not None:
                     if v_val >= 2:
                         gebot.append({"s": sp, "k": cn})
                     elif v_val == 0:
+                        # Fortschritt (f) und Diamant-Anzahl (d) werden für die Sortierung mitgespeichert
                         bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia})
 
+        # Sortierung: Finisher (8/9 Karten) zuerst
         bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
         
         def get_matches(is_dia):
