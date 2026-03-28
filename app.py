@@ -30,8 +30,8 @@ df = load_data(int(time.time() / 5))
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # --- 🎯 TAUSCH-PRIORITÄTEN (ALLES AUF EINEN BLICK) ---
-    st.markdown("### 📋 TAUSCH-LISTE (Nach Priorität)")
+    # --- 🎯 TAUSCH-PRIORITÄTEN GETRENNT NACH TYP ---
+    st.markdown("### 📋 TAUSCH-LISTE (Nach Typ & Prio)")
     
     gbt, bdr = [], []
     for _, row in df.iterrows():
@@ -45,32 +45,35 @@ if df is not None:
                 if val >= 2: gbt.append({"s": sp, "k": cn})
                 elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz})
 
-    # Sortieren: Wer am weitesten ist (8/9, dann 7/9...), kommt zuerst
-    bdr_sorted = sorted(bdr, key=lambda x: x['f'], reverse=True)
+    # Erstellung der Tabs für Gold und Diamant
+    tab_gold, tab_diamant = st.tabs(["🌕 GOLD KARTEN", "💎 DIAMANT KARTEN"])
     
-    weg = set()
-    found_any = False
-    
-    # Wir zeigen hier ALLES an, was möglich ist, sortiert nach Fortschritt
-    for b in bdr_sorted:
-        for g in gbt:
-            if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                # Formatierung je nach Wichtigkeit
-                if b["f"] == 8:
-                    st.success(f"🌟 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (9/9)")
-                elif b["f"] == 7:
-                    st.info(f"🚀 **PRIO 1:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (8/9)")
-                elif b["f"] == 6:
-                    st.warning(f"📈 **PRIO 2:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (7/9)")
-                else:
-                    st.write(f"🤝 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']+1}/9)")
-                
-                weg.add(g["s"])
-                found_any = True
-                break
-    
-    if not found_any:
-        st.write("Aktuell keine Tauschmöglichkeiten gefunden.")
+    for tab, is_diamant in zip([tab_gold, tab_diamant], [False, True]):
+        with tab:
+            weg = set()
+            found = False
+            # Sortierung nach Fortschritt (8/9 zuerst)
+            bdr_sorted = sorted(bdr, key=lambda x: x['f'], reverse=True)
+            
+            for b in bdr_sorted:
+                # Filter: Diamant-Karten haben "(D)" im Namen
+                if (("(D)" in b["k"]) == is_diamant):
+                    for g in gbt:
+                        if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
+                            # Anzeigeformat je nach Fortschritt
+                            prio_text = f"({b['f']}/9)"
+                            if b['f'] == 8:
+                                st.success(f"🌟 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (9/9)")
+                            elif b['f'] == 7:
+                                st.info(f"🚀 **PRIO 1:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (8/9)")
+                            else:
+                                st.write(f"🤝 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** {prio_text}")
+                            
+                            weg.add(g["s"])
+                            found = True
+                            break
+            if not found:
+                st.write("Aktuell keine passenden Täusche gefunden.")
 
     st.markdown("---")
 
@@ -91,7 +94,7 @@ if df is not None:
             cols = st.columns(3)
             for c_idx in range(3):
                 i = r_idx * 3 + col_idx
-                with cols[c_idx]:
+                with cols[col_idx]:
                     v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
                     neue_werte.append(v)
         
@@ -101,10 +104,3 @@ if df is not None:
             st.balloons()
             st.cache_data.clear()
             st.rerun()
-
-    # --- ADMIN / GOLD-DIAMANT FILTER ---
-    st.markdown("---")
-    if st.text_input("Admin-Passwort für Filter", type="password") == ADMIN_PASSWORT:
-        st.info("Oben siehst du bereits alle Täusche sortiert. Nutze Tabs für gezielte Suche:")
-        t1, t2 = st.tabs(["Nur Gold", "Nur Diamant"])
-        # (Hier könnten bei Bedarf noch gefilterte Listen stehen)
