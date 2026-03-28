@@ -18,7 +18,7 @@ def safe_int(val):
     except: return 0
 
 # --- 3. DATEN LADEN ---
-@st.cache_data(ttl=10) 
+@st.cache_data(ttl=5) 
 def load_data(ts):
     try:
         url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={ts}"
@@ -26,7 +26,7 @@ def load_data(ts):
         return df[df.iloc[:, 0].notna()]
     except: return None
 
-df = load_data(int(time.time() / 10))
+df = load_data(int(time.time() / 5))
 
 if df is not None:
     namen = df.iloc[:, 0].unique().tolist()
@@ -42,8 +42,10 @@ if df is not None:
         sz = df[df.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
         db_vals = [safe_int(sz.iloc[0, start_c + i]) for i in range(9)]
-
-        st.markdown(f"### 🃏 Deck {d_sel} bearbeiten")
+        
+        # FINISHER ANZEIGE OBEN
+        besitz_aktuell = sum(1 for v in db_vals if v > 0)
+        st.subheader(f"🃏 Deck {d_sel} | Fortschritt: {besitz_aktuell}/9 Karten")
         
         neue_werte = []
         for row_idx in range(3):
@@ -62,7 +64,7 @@ if df is not None:
                     if "Erfolg" in r.text:
                         st.balloons()
                         st.success("✅ Erledigt!")
-                        time.sleep(1) # HIER WAR DER FEHLER - JETZT KORREKT
+                        time.sleep(1)
                         st.cache_data.clear()
                         st.rerun()
                     else: st.error(f"Fehler: {r.text}")
@@ -73,7 +75,7 @@ if df is not None:
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     
     if pwd == ADMIN_PASSWORT:
-        st.markdown("### 🕵️‍♂️ AKTUELLE TAUSCHVORSCHLÄGE")
+        st.markdown("### 🕵️‍♂️ FINISHER-CHECK & TAUSCH")
         gbt, bdr = [], []
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
@@ -95,8 +97,9 @@ if df is not None:
                     if (("(D)" in b["k"]) == is_diamant):
                         for g in gbt:
                             if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                                st.write(f"**{g['k']}**: {g['s']} ➔ {b['s']} `({b['f']}/9)`")
+                                # HIER STEHT DER FINISHER STATUS DEUTLICH
+                                st.write(f"**{g['k']}**: {g['s']} ➔ {b['s']} **(Status: {b['f']}/9)**")
                                 weg.add(g["s"])
                                 found_any = True
                                 break
-                if not found_any: st.info("Keine Tausch-Angebote.")
+                if not found_any: st.info("Keine Angebote.")
