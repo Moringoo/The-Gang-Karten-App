@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
-import re
 
 # --- 1. SETUP ---
 st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
@@ -19,7 +18,8 @@ def safe_int(val):
     except: return 0
 
 # --- 3. DATEN LADEN ---
-@st.cache_data(ttl=30) # Kürzerer Cache für schnellere Updates
+# Wir nutzen ein kurzes Caching, damit die App flüssig läuft
+@st.cache_data(ttl=10) 
 def load_data(ts):
     try:
         url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={ts}"
@@ -27,71 +27,72 @@ def load_data(ts):
         return df[df.iloc[:, 0].notna()]
     except: return None
 
-df = load_data(int(time.time() / 30))
+# Daten laden mit Zeitstempel (aktualisiert alle 10 Sek automatisch)
+df = load_data(int(time.time() / 10))
 
 if df is not None:
     namen = df.iloc[:, 0].unique().tolist()
     st.title("💀 THE GANG HQ")
     
-    c1, c2 = st.columns(2)
-    n_sel = c1.selectbox("Wer bist du?", ["Wählen..."] + namen, key="main_user_sel")
-    d_sel = c2.selectbox("Welches Deck?", list(range(1, 16)), key="main_deck_sel")
+    col1, col2 = st.columns(2)
+    with col1:
+        n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
+    with col2:
+        d_sel = st.selectbox("Welches Deck?", list(range(1, 16)))
     
     if n_sel != "Wählen...":
+        # Zeile des Spielers finden
         sz = df[df.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
-        # Die aktuellen Werte aus dem Google Sheet
+        
+        # Aktuelle Werte aus dem Sheet lesen
         db_vals = [safe_int(sz.iloc[0, start_c + i]) for i in range(9)]
 
-        st.markdown("### 🎙️ SCHNELL-EINGABE")
-        v_in = st.text_input("Zahlenkette (z.B. 120011211) & ENTER:", key="chain_input")
+        st.markdown(f"### 🃏 Deck {d_sel} bearbeiten")
         
-        # Logik für die Kette
-        kette_zahlen = []
-        if v_in:
-            digs = re.findall(r'\d', v_in)
-            if len(digs) >= 9:
-                kette_zahlen = [int(d) for d in digs[:9]]
-                st.success(f"✅ Kette erkannt: {' | '.join(digs[:9])}")
-            else:
-                st.warning(f"⚠️ Erst {len(digs)} von 9 Zahlen...")
-
-        # --- DAS GRID ---
-        st.markdown("---")
+        # Das 3x3 Raster für die Karten
         neue_werte = []
-        cols = st.columns(3) + st.columns(3) + st.columns(3)
+        c = st.columns(3)
         
-        for i in range(9):
-            with cols[i]:
-                # WICHTIG: Wenn eine Kette da ist, nimm die Zahl aus der Kette. 
-                # Sonst nimm den Wert aus dem Google Sheet.
-                if kette_zahlen:
-                    default_val = kette_zahlen[i]
-                else:
-                    default_val = db_vals[i]
-                
-                # Jedes Feld bekommt einen absolut eindeutigen Key
-                v = st.number_input(f"K{i+1}", 0, 9, value=default_val, key=f"k_field_{n_sel}_{d_sel}_{i}")
+        # Erste Reihe (K1-K3)
+        for i in range(3):
+            with c[i]:
+                v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
                 neue_werte.append(v)
+        
+        # Zweite Reihe (K4-K6)
+        c = st.columns(3)
+        for i in range(3, 6):
+            with c[i-3]:
+                v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
+                neue_werte.append(v)
+                
+        # Dritte Reihe (K7-K9)
+        c = st.columns(3)
+        for i in range(6, 9):
+            with c[i-6]:
+                v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
+                neue_werte.append(v)
+        
+        st.markdown("---")
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
-            with st.spinner("Sende an Google..."):
+            with st.spinner("Speichere im Google Sheet..."):
                 try:
                     r = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
                     if "Erfolg" in r.text:
                         st.balloons()
-                        st.success("🔥 DATEN ERFOLGREICH ÜBERMITTELT!")
-                        time.sleep(1.5)
-                        # Cache leeren und Seite komplett neu laden
+                        st.success("✅ Erledigt! Die Daten wurden ins Sheet übertragen.")
+                        time.sleep(1)
                         st.cache_data.clear()
                         st.rerun()
                     else:
-                        st.error(f"Google Fehler: {r.text}")
+                        st.error(f"Fehler: {r.text}")
                 except Exception as e:
-                    st.error(f"Verbindungs-Fehler: {e}")
+                    st.error(f"Verbindung fehlgeschlagen: {e}")
 
-    # --- ADMIN BEREICH ---
+    # --- ADMIN BEREICH (Optional) ---
     st.markdown("---")
-    if st.text_input("Admin-Passwort", type="password", key="admin_pwd") == ADMIN_PASSWORT:
-        st.info("Tauschanalyse bereit.")
+    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
+        st.info("Tauschanalyse ist im Hintergrund bereit.")
