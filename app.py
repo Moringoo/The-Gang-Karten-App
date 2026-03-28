@@ -20,16 +20,15 @@ def safe_int(val):
     except: return 0
 
 # --- 3. SESSION STATE INITIALISIERUNG ---
-if "form_iteration" not in st.session_state:
-    st.session_state.form_iteration = 0
+if "form_iter" not in st.session_state:
+    st.session_state.form_iter = 0
 
-# Hilfsfunktion zum kompletten Reset des Sprachfeldes
 def trigger_reset():
-    st.session_state.form_iteration += 1
-    # Auch die temporären Karten-Eingaben löschen
+    st.session_state.form_iter += 1
+    # Alle temporären Sprach-Werte löschen
     for i in range(9):
-        if f"k_val_{i}" in st.session_state:
-            del st.session_state[f"k_val_{i}"]
+        if f"temp_k_{i}" in st.session_state:
+            del st.session_state[f"temp_k_{i}"]
 
 # --- 4. DESIGN ---
 st.markdown("""
@@ -49,7 +48,6 @@ try:
 
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
 
-    # --- BEREICH 1: KARTEN-EINGABE ---
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
 
     col1, col2 = st.columns(2)
@@ -65,49 +63,47 @@ try:
         st.markdown('<div class="voice-area">', unsafe_allow_html=True)
         st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
         
-        # Der Trick: Wir hängen die "form_iteration" an den Key. 
-        # So denkt Streamlit bei jedem Reset, es sei ein komplett neues Feld.
-        v_in = st.text_input(
-            "9 Zahlen sprechen und ENTER:", 
-            key=f"v_input_{st.session_state.form_iteration}"
-        )
+        # Ein eindeutiger Key für das Textfeld, der sich bei jedem Reset ändert
+        v_in = st.text_input("Zahlenkette eingeben & ENTER:", key=f"v_field_{st.session_state.form_iter}")
         
         if v_in:
             all_digits = re.findall(r'\d', v_in) 
             if len(all_digits) >= 9:
                 for i in range(9):
-                    st.session_state[f"k_val_{i}"] = int(all_digits[i])
+                    # Wir speichern die neuen Zahlen explizit im State
+                    st.session_state[f"temp_k_{i}"] = int(all_digits[i])
                 st.success(f"✅ Kette erkannt: {' | '.join(all_digits[:9])}")
             else:
-                st.warning(f"⚠️ Kette zu kurz ({len(all_digits)}/9).")
+                st.warning(f"⚠️ Nur {len(all_digits)} Zahlen gefunden.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3x3 Raster
+        # --- 3x3 RASTER ---
         neue_werte = []
         c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with c[i]:
-                # Wert aus State laden (von Spracheingabe) oder DB-Wert nehmen
-                val_key = f"k_val_{i}"
-                current_val = st.session_state.get(val_key, db_vals[i])
-                
-                # Wir nutzen hier keinen festen Key im Widget, um Konflikte zu vermeiden, 
-                # sondern lassen den State die Steuerung übernehmen.
-                val = st.number_input(f"K{i+1}", 0, 9, value=current_val, key=f"num_{val_key}_{st.session_state.form_iteration}")
+                # PRIORITÄT: 
+                # 1. Wenn gerade eine Spracheingabe gemacht wurde (temp_k_i), nimm diese.
+                # 2. Sonst nimm den Wert aus der Datenbank (db_vals).
+                if f"temp_k_{i}" in st.session_state:
+                    current_val = st.session_state[f"temp_k_{i}"]
+                else:
+                    current_val = db_vals[i]
+
+                # Das Widget kriegt einen dynamischen Key, damit es sich bei Änderungen aktualisiert
+                val = st.number_input(f"K{i+1}", 0, 9, value=current_val, key=f"widget_k_{i}_{st.session_state.form_iter}")
                 neue_werte.append(val)
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
             werte_str = ",".join([str(int(v)) for v in neue_werte])
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
-            st.success("Erfolgreich gespeichert!")
-            
-            # Reset auslösen und Seite neu laden
+            st.success("Gespeichert!")
             trigger_reset()
             time.sleep(1)
             st.rerun()
 
-    # --- BEREICH 2: ANALYSE ---
+    # --- ANALYSE BEREICH ---
     st.markdown("<hr>", unsafe_allow_html=True)
     if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
         st.markdown("### 🕵️‍♂️ TAUSCH-CHECK")
