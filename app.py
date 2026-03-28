@@ -5,11 +5,10 @@ import time
 import re
 
 # --- 1. SETUP ---
-st.set_page_config(page_title="The Gang HQ Final", page_icon="💀", layout="wide")
+st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
 
 # --- 2. KONFIGURATION ---
 GID = "2025591169"
-# Die URL muss exakt stimmen - prüfe im Google Script, ob "Jeder" (auch anonym) Zugriff hat!
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
@@ -26,9 +25,8 @@ if "form_iter" not in st.session_state:
 def trigger_reset():
     st.session_state.form_iter += 1
     for i in range(9):
-        key = f"voice_val_{i}"
-        if key in st.session_state:
-            del st.session_state[key]
+        if f"voice_val_{i}" in st.session_state:
+            del st.session_state[f"voice_val_{i}"]
 
 # --- 4. DATEN LADEN ---
 def load_data():
@@ -39,87 +37,82 @@ def load_data():
         df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
         return df
     except Exception as e:
-        st.error(f"Fehler beim Laden: {e}")
+        st.error(f"Download-Fehler: {e}")
         return None
 
 # --- 5. DESIGN ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 10px; }
-    .voice-area { background-color: #1e293b; padding: 15px; border-radius: 10px; border: 2px solid #3b82f6; margin-bottom: 20px; }
-    </style>
-    """, unsafe_allow_html=True)
+st.markdown("<style>.stApp { background-color: #0e1117; color: white; } .voice-area { background-color: #1e293b; padding: 15px; border-radius: 10px; border: 2px solid #3b82f6; }</style>", unsafe_allow_html=True)
 
-# --- 6. HAUPT-LOGIK ---
-df_aktuell = load_data()
+# --- 6. LOGIK ---
+df = load_data()
 
-if df_aktuell is not None:
-    spieler_namen = df_aktuell.iloc[:, 0].unique().tolist()
-    st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
+if df is not None:
+    namen = df.iloc[:, 0].unique().tolist()
+    st.title("💀 THE GANG HQ")
 
-    # --- EINGABE-BEREICH ---
-    st.markdown("### 📝 KARTEN AKTUALISIEREN")
     col1, col2 = st.columns(2)
-    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=trigger_reset)
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + namen, on_change=trigger_reset)
     d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=trigger_reset)
     
     if n_sel != "Wählen...":
-        s_zeile = df_aktuell[df_aktuell.iloc[:, 0] == n_sel]
-        if len(s_zeile) > 0:
-            start_c = 1 + ((d_sel - 1) * 9)
-            sheet_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
+        sz = df[df.iloc[:, 0] == n_sel]
+        start_c = 1 + ((d_sel - 1) * 9)
+        db_vals = [safe_int(sz.iloc[0, start_c + i]) for i in range(9)]
 
-            # VOICE-EINGABE
-            st.markdown('<div class="voice-area">', unsafe_allow_html=True)
-            v_input = st.text_input("Zahlenkette eingeben & ENTER:", key=f"v_in_{st.session_state.form_iter}")
-            
-            if v_input:
-                digits = re.findall(r'\d', v_input)
-                if len(digits) >= 9:
-                    for i in range(9):
-                        st.session_state[f"voice_val_{i}"] = int(digits[i])
-                    st.session_state.form_iter += 1 
-                    st.rerun()
-                else:
-                    st.warning(f"⚠️ Nur {len(digits)} von 9 Zahlen erkannt.")
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="voice-area">', unsafe_allow_html=True)
+        v_in = st.text_input("Zahlenkette (9 Ziffern):", key=f"v_{st.session_state.form_iter}")
+        if v_in:
+            digs = re.findall(r'\d', v_in)
+            if len(digs) >= 9:
+                for i in range(9): st.session_state[f"voice_val_{i}"] = int(digs[i])
+                st.session_state.form_iter += 1
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-            # 3x3 RASTER
-            neue_werte = []
-            cols = st.columns(3) + st.columns(3) + st.columns(3)
-            for i in range(9):
-                with cols[i]:
-                    val_to_show = st.session_state.get(f"voice_val_{i}", sheet_vals[i])
-                    res_val = st.number_input(f"K{i+1}", 0, 9, value=val_to_show, key=f"k_{i}_{st.session_state.form_iter}")
-                    neue_werte.append(res_val)
-            
-            if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
-                werte_str = ",".join([str(int(v)) for v in neue_werte])
-                params = {"name": n_sel, "deck": str(d_sel), "werte": werte_str}
-                
-                # VERBESSERTES SENDEN
-                with st.spinner('Sende Daten an Google...'):
-                    try:
-                        # Wir nutzen einen Timeout von 10 Sekunden
-                        resp = requests.get(SCRIPT_URL, params=params, timeout=10)
-                        if resp.status_code == 200:
-                            st.balloons()
-                            st.success(f"Erfolgreich! Deck {d_sel} für {n_sel} aktualisiert.")
-                            trigger_reset()
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error(f"Google antwortet mit Fehler-Code: {resp.status_code}")
-                    except requests.exceptions.Timeout:
-                        st.error("Zeitüberschreitung! Google Script antwortet zu langsam.")
-                    except Exception as e:
-                        st.error(f"Verbindungsfehler: {e}")
+        neue_werte = []
+        cols = st.columns(3) + st.columns(3) + st.columns(3)
+        for i in range(9):
+            with cols[i]:
+                cur = st.session_state.get(f"voice_val_{i}", db_vals[i])
+                v = st.number_input(f"K{i+1}", 0, 9, value=cur, key=f"k_{i}_{st.session_state.form_iter}")
+                neue_werte.append(v)
+        
+        if st.button("🚀 SPEICHERN", use_container_width=True):
+            w_str = ",".join([str(int(x)) for x in neue_werte])
+            with st.spinner("Sende..."):
+                try:
+                    r = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=10)
+                    if r.status_code == 200:
+                        st.success("Gespeichert!")
+                        trigger_reset()
+                        time.sleep(1)
+                        st.rerun()
+                    else: st.error(f"Fehler: {r.status_code}")
+                except Exception as e: st.error(f"Verbindung weg: {e}")
 
-    # --- ANALYSE-BEREICH ---
-    st.markdown("<hr>", unsafe_allow_html=True)
-    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        if st.button("🔄 DATEN ERNEUT LADEN"):
-            st.rerun()
-        # ... Restliche Analyse-Logik bleibt gleich ...
-        st.info("Tauschanalyse bereit.")o(m)
+    st.markdown("---")
+    if st.text_input("Admin", type="password") == ADMIN_PASSWORT:
+        st.markdown("### 🕵️ Tausch-Check")
+        gbt, bdr = [], []
+        for _, row in df.iterrows():
+            sp = str(row.iloc[0]).strip()
+            for d in range(1, 16):
+                sc = 1 + ((d - 1) * 9)
+                bz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                for i in range(9):
+                    cn, val = df.columns[sc+i], safe_int(row.iloc[sc+i])
+                    if val >= 2: gbt.append({"s": sp, "k": cn})
+                    elif val == 0: bdr.append({"s": sp, "k": cn, "f": bz})
+
+        bdr = sorted(bdr, key=lambda x: x['f'], reverse=True)
+        t1, t2 = st.tabs(["🌕 Gold", "💎 Diamant"])
+        for tab, is_d in zip([t1, t2], [False, True]):
+            with tab:
+                weg = set()
+                for b in bdr:
+                    if (("(D)" in b["k"]) == is_d):
+                        for g in gbt:
+                            if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
+                                st.write(f"({b['f']}/9) {g['s']} ➔ {b['s']} ({g['k']})")
+                                weg.add(g["s"])
+                                break
