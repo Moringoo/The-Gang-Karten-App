@@ -30,8 +30,8 @@ df = load_data(int(time.time() / 5))
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # --- 🚨 FINISHER-ALARM (DIE DIREKTEN TAUSCH-ANWEISUNGEN) ---
-    st.markdown("### 🚨 FINISHER: DRINGEND POSTEN!")
+    # --- 🎯 TAUSCH-PRIORITÄTEN (ALLES AUF EINEN BLICK) ---
+    st.markdown("### 📋 TAUSCH-LISTE (Nach Priorität)")
     
     gbt, bdr = [], []
     for _, row in df.iterrows():
@@ -45,30 +45,40 @@ if df is not None:
                 if val >= 2: gbt.append({"s": sp, "k": cn})
                 elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz})
 
-    finisher_count = 0
-    weg_finisher = set()
+    # Sortieren: Wer am weitesten ist (8/9, dann 7/9...), kommt zuerst
+    bdr_sorted = sorted(bdr, key=lambda x: x['f'], reverse=True)
     
-    # Wir suchen hier NUR nach Leuten, die 8/9 haben und eine Karte brauchen
-    for b in bdr:
-        if b["f"] == 8: # Er hat 8 und braucht die 9. Karte
-            for g in gbt:
-                if g["s"] not in weg_finisher and g["s"] != b["s"] and g["k"] == b["k"]:
-                    # DAS IST DEIN FORMAT: Finisher: Karte von Geber an Nehmer
-                    st.error(f"📢 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}**! (Bringt ihn auf 9/9)")
-                    weg_finisher.add(g["s"])
-                    finisher_count += 1
-                    break
+    weg = set()
+    found_any = False
     
-    if finisher_count == 0:
-        st.info("Aktuell keine Täusche für einen direkten Deck-Abschluss (9/9) möglich.")
+    # Wir zeigen hier ALLES an, was möglich ist, sortiert nach Fortschritt
+    for b in bdr_sorted:
+        for g in gbt:
+            if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
+                # Formatierung je nach Wichtigkeit
+                if b["f"] == 8:
+                    st.success(f"🌟 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (9/9)")
+                elif b["f"] == 7:
+                    st.info(f"🚀 **PRIO 1:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (8/9)")
+                elif b["f"] == 6:
+                    st.warning(f"📈 **PRIO 2:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (7/9)")
+                else:
+                    st.write(f"🤝 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']+1}/9)")
+                
+                weg.add(g["s"])
+                found_any = True
+                break
+    
+    if not found_any:
+        st.write("Aktuell keine Tauschmöglichkeiten gefunden.")
 
     st.markdown("---")
 
     # --- BEARBEITUNGS-BEREICH ---
     namen = df.iloc[:, 0].unique().tolist()
     c1, c2 = st.columns(2)
-    n_sel = c1.selectbox("Wer bist du?", ["Wählen..."] + namen)
-    d_sel = c2.selectbox("Welches Deck?", list(range(1, 16)))
+    with c1: n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
+    with c2: d_sel = st.selectbox("Welches Deck?", list(range(1, 16)))
     
     if n_sel != "Wählen...":
         sz = df[df.iloc[:, 0] == n_sel]
@@ -80,30 +90,21 @@ if df is not None:
         for r_idx in range(3):
             cols = st.columns(3)
             for c_idx in range(3):
-                i = r_idx * 3 + c_idx
+                i = r_idx * 3 + col_idx
                 with cols[c_idx]:
                     v = st.number_input(f"Karte {i+1}", 0, 9, value=db_vals[i], key=f"k{i}_{n_sel}_{d_sel}")
                     neue_werte.append(v)
         
-        if st.button("🚀 SPEICHERN"):
+        if st.button("🚀 SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
-            r = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str})
+            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str})
             st.balloons()
             st.cache_data.clear()
             st.rerun()
 
-    # --- NORMALE TAUSCHVORSCHLÄGE (ADMIN) ---
+    # --- ADMIN / GOLD-DIAMANT FILTER ---
     st.markdown("---")
-    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        st.markdown("### 🤝 Weitere Tauschvorschläge")
-        t1, t2 = st.tabs(["Gold", "Diamant"])
-        for tab, is_d in zip([t1, t2], [False, True]):
-            with tab:
-                weg = set()
-                for b in sorted(bdr, key=lambda x: x['f'], reverse=True):
-                    if (("(D)" in b["k"]) == is_d) and b["f"] < 8: # Nur "normale" Täusche
-                        for g in gbt:
-                            if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                                st.write(f"{g['k']}: {g['s']} ➔ {b['s']} ({b['f']}/9)")
-                                weg.add(g["s"])
-                                break
+    if st.text_input("Admin-Passwort für Filter", type="password") == ADMIN_PASSWORT:
+        st.info("Oben siehst du bereits alle Täusche sortiert. Nutze Tabs für gezielte Suche:")
+        t1, t2 = st.tabs(["Nur Gold", "Nur Diamant"])
+        # (Hier könnten bei Bedarf noch gefilterte Listen stehen)
