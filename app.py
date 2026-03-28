@@ -19,7 +19,6 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# Hilfsfunktion: Wandelt gesprochene Wörter in Zahlen um
 def text_to_numbers(text):
     d = {"null": "0", "eins": "1", "zwei": "2", "drei": "3", "vier": "4", 
          "fünf": "5", "sechs": "6", "sieben": "7", "acht": "8", "neun": "9"}
@@ -28,12 +27,16 @@ def text_to_numbers(text):
         text = text.replace(word, num)
     return text
 
-# --- 3. DESIGN ---
+# --- 3. SESSION STATE INITIALISIEREN ---
+if 'karten_werte' not in st.session_state:
+    st.session_state.karten_werte = [0] * 9
+
+# --- 4. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 20px; }
-    .voice-hint { background-color: #262730; padding: 10px; border-radius: 5px; border-left: 5px solid #3b82f6; margin-bottom: 15px; font-size: 0.9rem; }
+    .voice-hint { background-color: #262730; padding: 10px; border-radius: 5px; border-left: 5px solid #3b82f6; margin-bottom: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -49,78 +52,81 @@ try:
     # --- BEREICH 1: KARTEN-EINGABE ---
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
     col1, col2 = st.columns(2)
-    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen)
-    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)))
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, key="name_select")
+    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), key="deck_select")
     
     if n_sel != "Wählen...":
+        # Initial-Werte laden, falls noch nicht geschehen oder User gewechselt hat
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
-        # Standardwerte aus dem Sheet
-        vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
+        db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
         
-        st.markdown('<div class="voice-hint">🎙️ <b>Anleitung:</b> Klicke ins Feld, aktiviere Mikrofon, sprich 9 Zahlen (z.B. "1 0 2 0 1 1 0 0 2") und drücke <b>Enter/Suchen</b> auf der Tastatur.</div>', unsafe_allow_html=True)
+        # Spracheingabe-Logik
+        st.markdown('<div class="voice-hint">🎙️ <b>Spracheingabe:</b> Zahlen sprechen und <b>Enter</b> drücken.</div>', unsafe_allow_html=True)
         
-        # On_change sorgt dafür, dass die App sofort reagiert
-        voice_input = st.text_input("Sprach-Eingabefeld", key="v_input", placeholder="Hier reinsprechen...")
-        
-        if voice_input:
-            clean_input = text_to_numbers(voice_input)
-            found_nums = re.findall(r'\d+', clean_input)
-            if len(found_nums) >= 9:
-                for i in range(9):
-                    vals[i] = int(found_nums[i])
-                st.success("✅ Zahlen erkannt und unten eingetragen!")
+        def process_voice():
+            v_input = st.session_state.voice_input_field
+            if v_input:
+                clean = text_to_numbers(v_input)
+                nums = re.findall(r'\d+', clean)
+                if len(nums) >= 9:
+                    for i in range(9):
+                        st.session_state[f"k_val_{i}"] = int(nums[i])
+                    st.toast("✅ Karten verteilt!", icon="🎯")
 
-        # 3x3 Raster zur Kontrolle
-        neue_werte = [0] * 9
-        all_cols = st.columns(3) + st.columns(3) + st.columns(3)
+        st.text_input("Hier reinsprechen...", key="voice_input_field", on_change=process_voice)
+
+        # 3x3 Raster
+        neue_werte = []
+        cols = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
-            with all_cols[i]:
-                neue_werte[i] = st.number_input(f"K{i+1}", 0, 9, value=vals[i], key=f"n_inp_{i}")
+            with cols[i]:
+                # Wir nutzen die DB-Werte als Default, falls im State noch nichts steht
+                val = st.number_input(f"K{i+1}", 0, 9, value=db_vals[i], key=f"k_val_{i}")
+                neue_werte.append(val)
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
             werte_str = ",".join([str(int(v)) for v in neue_werte])
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
-            st.success(f"Daten für {n_sel} gespeichert!")
-            time.sleep(2)
+            st.success("Gespeichert!")
+            time.sleep(1)
             st.rerun()
 
-    # --- BEREICH 2: TAUSCHANALYSE ---
+    # --- BEREICH 2: ANALYSE ---
     st.markdown("<hr>", unsafe_allow_html=True)
     if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        st.markdown("### 🕵️‍♂️ BESTE TAUSCH-OPTIONEN")
+        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK")
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
-                bz, dia_count = 0, 0
+                bz, dia = 0, 0
                 for i in range(9):
                     cn = df_raw.columns[sc + i]
                     val = safe_int(row.iloc[sc + i])
                     if val > 0: bz += 1
-                    if "(D)" in cn: dia_count += 1
+                    if "(D)" in cn: dia += 1
                 for i in range(9):
                     cn = df_raw.columns[sc + i]
                     val = safe_int(row.iloc[sc + i])
                     if val >= 2: gebot.append({"s": sp, "k": cn})
-                    elif val == 0:
-                        bedarf.append({"s": sp, "k": cn, "f": bz, "d_val": dia_count, "did": f"{sp}_D{d}"})
+                    elif val == 0: bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia, "did": f"{sp}_D{d}"})
 
-        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d_val']), reverse=True)
+        bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
         
-        def get_matches(is_dia_tab):
+        def get_matches(is_dia):
             res, weg = [], set()
-            fort_map = {b['did']: b['f'] for b in bedarf}
+            f_map = {b['did']: b['f'] for b in bedarf}
             for b in bedarf:
-                if (("(D)" in b["k"]) == is_dia_tab):
+                if (("(D)" in b["k"]) == is_dia):
                     for g in gebot:
                         if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                            akt = fort_map[b['did']]
-                            label = "**🚨 FINISHER!**" if akt == 8 else f"({akt}/9)"
-                            res.append(f"{label} {g['s']} ➔ {b['s']} ({g['k']})")
-                            fort_map[b['did']] += 1; weg.add(g["s"])
+                            akt = f_map[b['did']]
+                            l = "**🚨 FINISHER!**" if akt == 8 else f"({akt}/9)"
+                            res.append(f"{l} {g['s']} ➔ {b['s']} ({g['k']})")
+                            f_map[b['did']] += 1; weg.add(g["s"])
                             break
             return res
 
