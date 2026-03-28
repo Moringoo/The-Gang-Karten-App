@@ -28,10 +28,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Callback-Funktion zum Leeren des Voice-Feldes bei Deck/Namenswechsel
-def reset_voice_field():
-    if "voice_box" in st.session_state:
-        st.session_state.voice_box = ""
+# --- 4. HILFSFUNKTIONEN ---
+def clear_v_input():
+    # Wir löschen den Inhalt im State, ohne das Widget direkt zu blockieren
+    st.session_state["v_input_key"] = ""
 
 try:
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
@@ -46,9 +46,9 @@ try:
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
 
     col1, col2 = st.columns(2)
-    # Bei Änderung des Namens oder Decks wird das Sprachfeld geleert
-    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=reset_voice_field)
-    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=reset_voice_field)
+    # Wenn Name oder Deck wechselt, setzen wir das Voice-Feld zurück
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=clear_v_input)
+    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=clear_v_input)
     
     if n_sel != "Wählen...":
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
@@ -58,8 +58,11 @@ try:
         # --- VOICE LOGIK ---
         st.markdown('<div class="voice-area">', unsafe_allow_html=True)
         st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
-        v_in = st.text_input("Spreche 9 Zahlen (z.B. 101131102) und drücke ENTER:", key="voice_box")
         
+        # Wir nutzen einen stabilen Key für das Widget
+        v_in = st.text_input("9 Zahlen sprechen und ENTER:", key="v_input_key")
+        
+        # Logik zur Verarbeitung
         if v_in:
             all_digits = re.findall(r'\d', v_in) 
             if len(all_digits) >= 9:
@@ -67,7 +70,7 @@ try:
                     st.session_state[f"k_val_{i}"] = int(all_digits[i])
                 st.success(f"✅ Kette erkannt: {' | '.join(all_digits[:9])}")
             else:
-                st.warning(f"⚠️ Kette zu kurz! Nur {len(all_digits)} von 9 Zahlen erkannt.")
+                st.warning(f"⚠️ Kette zu kurz ({len(all_digits)}/9).")
         st.markdown('</div>', unsafe_allow_html=True)
 
         # 3x3 Raster
@@ -75,7 +78,9 @@ try:
         c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with c[i]:
-                val = st.number_input(f"K{i+1}", 0, 9, value=db_vals[i], key=f"k_val_{i}")
+                # Wir nehmen den Wert aus dem Session State, falls vorhanden, sonst DB
+                default_val = st.session_state.get(f"k_val_{i}", db_vals[i])
+                val = st.number_input(f"K{i+1}", 0, 9, value=default_val, key=f"k_val_{i}")
                 neue_werte.append(val)
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
@@ -83,7 +88,13 @@ try:
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
             st.success("Erfolgreich gespeichert!")
-            reset_voice_field() # Feld nach dem Speichern leeren
+            
+            # Alle temporären Zustände löschen für den nächsten Durchgang
+            clear_v_input()
+            for i in range(9):
+                if f"k_val_{i}" in st.session_state:
+                    del st.session_state[f"k_val_{i}"]
+            
             time.sleep(1)
             st.rerun()
 
