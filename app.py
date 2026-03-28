@@ -19,6 +19,15 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
+# Hilfsfunktion: Wandelt gesprochene Wörter in Zahlen um
+def text_to_numbers(text):
+    d = {"null": "0", "eins": "1", "zwei": "2", "drei": "3", "vier": "4", 
+         "fünf": "5", "sechs": "6", "sieben": "7", "acht": "8", "neun": "9"}
+    text = text.lower()
+    for word, num in d.items():
+        text = text.replace(word, num)
+    return text
+
 # --- 3. DESIGN ---
 st.markdown("""
     <style>
@@ -29,18 +38,10 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 try:
-    # Daten laden
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
-    
-    # FILTER: Leere Zeilen UND "Leer" / "Platzhalter" entfernen
-    df_raw = df_raw[df_raw.iloc[:, 0].notna()]
-    df_raw = df_raw[df_raw.iloc[:, 0].str.strip() != ""]
+    df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "")]
     df_raw = df_raw[~df_raw.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
-    
-    # "Male" Fix
     df_raw.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
-    
-    # Namen in Original-Reihenfolge
     spieler_namen = df_raw.iloc[:, 0].unique().tolist()
 
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
@@ -54,40 +55,41 @@ try:
     if n_sel != "Wählen...":
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
+        # Standardwerte aus dem Sheet
         vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
         
-        # --- NEU: SPRACH- / SCHNELL-EINGABE ---
-        st.markdown('<div class="voice-hint">🎙️ <b>Schnell-Eingabe:</b> Nutze das Mikrofon deiner Tastatur. Sprich 9 Zahlen (z.B. "1 0 2 0 1 1 0 0 2")</div>', unsafe_allow_html=True)
-        voice_input = st.text_input("Sprich oder tippe alle 9 Werte hier rein...", key="voice_input")
+        st.markdown('<div class="voice-hint">🎙️ <b>Anleitung:</b> Klicke ins Feld, aktiviere Mikrofon, sprich 9 Zahlen (z.B. "1 0 2 0 1 1 0 0 2") und drücke <b>Enter/Suchen</b> auf der Tastatur.</div>', unsafe_allow_html=True)
+        
+        # On_change sorgt dafür, dass die App sofort reagiert
+        voice_input = st.text_input("Sprach-Eingabefeld", key="v_input", placeholder="Hier reinsprechen...")
         
         if voice_input:
-            found_nums = re.findall(r'\d+', voice_input)
+            clean_input = text_to_numbers(voice_input)
+            found_nums = re.findall(r'\d+', clean_input)
             if len(found_nums) >= 9:
                 for i in range(9):
                     vals[i] = int(found_nums[i])
-                st.success("💡 Die 9 Zahlen wurden unten in die Felder verteilt!")
+                st.success("✅ Zahlen erkannt und unten eingetragen!")
 
-        # 3x3 Raster - Streng K1 bis K9
+        # 3x3 Raster zur Kontrolle
         neue_werte = [0] * 9
         all_cols = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with all_cols[i]:
-                neue_werte[i] = st.number_input(f"K{i+1}", 0, 9, value=vals[i], key=f"inp_{n_sel}_{d_sel}_{i}")
+                neue_werte[i] = st.number_input(f"K{i+1}", 0, 9, value=vals[i], key=f"n_inp_{i}")
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
             werte_str = ",".join([str(int(v)) for v in neue_werte])
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
-            st.success(f"Check! Die Karten für {n_sel} wurden aktualisiert.")
+            st.success(f"Daten für {n_sel} gespeichert!")
             time.sleep(2)
             st.rerun()
 
+    # --- BEREICH 2: TAUSCHANALYSE ---
     st.markdown("<hr>", unsafe_allow_html=True)
-
-    # --- BEREICH 2: AUTOMATISCHE TAUSCHANALYSE ---
     if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
         st.markdown("### 🕵️‍♂️ BESTE TAUSCH-OPTIONEN")
-        
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
             sp = str(row.iloc[0]).strip()
@@ -99,18 +101,13 @@ try:
                     val = safe_int(row.iloc[sc + i])
                     if val > 0: bz += 1
                     if "(D)" in cn: dia_count += 1
-                
                 for i in range(9):
                     cn = df_raw.columns[sc + i]
                     val = safe_int(row.iloc[sc + i])
-                    if val >= 2:
-                        gebot.append({"s": sp, "k": cn})
+                    if val >= 2: gebot.append({"s": sp, "k": cn})
                     elif val == 0:
-                        bedarf.append({
-                            "s": sp, "k": cn, "f": bz, "d_val": dia_count, "did": f"{sp}_D{d}"
-                        })
+                        bedarf.append({"s": sp, "k": cn, "f": bz, "d_val": dia_count, "did": f"{sp}_D{d}"})
 
-        # --- SORTIER-LOGIK: 8/9 vor 7/9 | Dann Diamanten ---
         bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d_val']), reverse=True)
         
         def get_matches(is_dia_tab):
@@ -123,16 +120,15 @@ try:
                             akt = fort_map[b['did']]
                             label = "**🚨 FINISHER!**" if akt == 8 else f"({akt}/9)"
                             res.append(f"{label} {g['s']} ➔ {b['s']} ({g['k']})")
-                            fort_map[b['did']] += 1
-                            weg.add(g["s"])
+                            fort_map[b['did']] += 1; weg.add(g["s"])
                             break
             return res
 
-        t1, t2 = st.tabs(["🌕 GOLD-KARTEN", "💎 DIAMANT-KARTEN"])
+        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
         with t1:
             for m in get_matches(False): st.success(m)
         with t2:
             for m in get_matches(True): st.info(m)
 
 except Exception as e:
-    st.error(f"Daten-Fehler: {e}")
+    st.error(f"Fehler: {e}")
