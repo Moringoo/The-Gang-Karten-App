@@ -8,9 +8,10 @@ import re
 st.set_page_config(page_title="The Gang HQ Final", page_icon="💀", layout="wide")
 
 # --- 2. KONFIGURATION ---
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 GID = "2025591169"
-SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}"
+# Zusatz "?cache=0" hilft manchmal, Browser-Caching zu umgehen
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&timestamp={int(time.time())}"
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
 def safe_int(val):
@@ -19,37 +20,43 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. SESSION STATE INITIALISIERUNG ---
+# --- 3. SESSION STATE ---
 if "form_iter" not in st.session_state:
     st.session_state.form_iter = 0
 
 def trigger_reset():
     st.session_state.form_iter += 1
-    # Alle temporären Sprach-Werte löschen
     for i in range(9):
         if f"temp_k_{i}" in st.session_state:
             del st.session_state[f"temp_k_{i}"]
 
-# --- 4. DESIGN ---
+# --- 4. DATEN LADEN (OHNE CACHE) ---
+def load_data():
+    # Wir hängen einen Zeitstempel an die URL, damit Google uns immer die echten Daten schickt
+    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&t={int(time.time())}"
+    df = pd.read_csv(url, dtype={0: str})
+    df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].str.strip() != "")]
+    df = df[~df.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
+    df.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
+    return df
+
+# --- 5. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
-    .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 20px; }
+    .main-title { text-align: center; color: #fbbf24; font-size: 2.2rem; font-weight: bold; margin-bottom: 10px; }
     .voice-area { background-color: #1e293b; padding: 15px; border-radius: 10px; border: 2px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
 try:
-    df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
-    df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "")]
-    df_raw = df_raw[~df_raw.iloc[:, 0].str.strip().str.lower().isin(['leer', 'platzhalter'])]
-    df_raw.iloc[:, 0] = df_raw.iloc[:, 0].replace(['Männlich', 'männlich', 'MAN'], 'Male')
+    df_raw = load_data()
     spieler_namen = df_raw.iloc[:, 0].unique().tolist()
 
     st.markdown('<p class="main-title">💀 THE GANG: HQ FINAL</p>', unsafe_allow_html=True)
 
+    # --- EINGABE-BEREICH ---
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
-
     col1, col2 = st.columns(2)
     n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=trigger_reset)
     d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=trigger_reset)
@@ -57,40 +64,29 @@ try:
     if n_sel != "Wählen...":
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
+        # Frisch aus dem Sheet geladen:
         db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
 
-        # --- VOICE LOGIK ---
         st.markdown('<div class="voice-area">', unsafe_allow_html=True)
         st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
-        
-        # Ein eindeutiger Key für das Textfeld, der sich bei jedem Reset ändert
         v_in = st.text_input("Zahlenkette eingeben & ENTER:", key=f"v_field_{st.session_state.form_iter}")
         
         if v_in:
             all_digits = re.findall(r'\d', v_in) 
             if len(all_digits) >= 9:
                 for i in range(9):
-                    # Wir speichern die neuen Zahlen explizit im State
                     st.session_state[f"temp_k_{i}"] = int(all_digits[i])
                 st.success(f"✅ Kette erkannt: {' | '.join(all_digits[:9])}")
             else:
-                st.warning(f"⚠️ Nur {len(all_digits)} Zahlen gefunden.")
+                st.warning(f"⚠️ Kette zu kurz ({len(all_digits)}/9).")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- 3x3 RASTER ---
         neue_werte = []
         c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with c[i]:
-                # PRIORITÄT: 
-                # 1. Wenn gerade eine Spracheingabe gemacht wurde (temp_k_i), nimm diese.
-                # 2. Sonst nimm den Wert aus der Datenbank (db_vals).
-                if f"temp_k_{i}" in st.session_state:
-                    current_val = st.session_state[f"temp_k_{i}"]
-                else:
-                    current_val = db_vals[i]
-
-                # Das Widget kriegt einen dynamischen Key, damit es sich bei Änderungen aktualisiert
+                # Wenn Spracheingabe vorliegt, nimm diese, sonst ECHTE Sheet-Daten
+                current_val = st.session_state.get(f"temp_k_{i}", db_vals[i])
                 val = st.number_input(f"K{i+1}", 0, 9, value=current_val, key=f"widget_k_{i}_{st.session_state.form_iter}")
                 neue_werte.append(val)
         
@@ -98,15 +94,18 @@ try:
             werte_str = ",".join([str(int(v)) for v in neue_werte])
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
-            st.success("Gespeichert!")
+            st.success("Gespeichert! Daten werden im Sheet aktualisiert.")
             trigger_reset()
-            time.sleep(1)
+            time.sleep(2)
             st.rerun()
 
     # --- ANALYSE BEREICH ---
     st.markdown("<hr>", unsafe_allow_html=True)
     if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK")
+        if st.button("🔄 DATEN JETZT ERNEUT LADEN"):
+            st.rerun()
+            
+        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK (Echte Sheet-Daten)")
         gebot, bedarf = [], []
         for _, row in df_raw.iterrows():
             sp = str(row.iloc[0]).strip()
