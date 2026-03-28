@@ -19,7 +19,19 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. DESIGN ---
+# --- 3. SESSION STATE INITIALISIERUNG ---
+if "form_iteration" not in st.session_state:
+    st.session_state.form_iteration = 0
+
+# Hilfsfunktion zum kompletten Reset des Sprachfeldes
+def trigger_reset():
+    st.session_state.form_iteration += 1
+    # Auch die temporären Karten-Eingaben löschen
+    for i in range(9):
+        if f"k_val_{i}" in st.session_state:
+            del st.session_state[f"k_val_{i}"]
+
+# --- 4. DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
@@ -27,11 +39,6 @@ st.markdown("""
     .voice-area { background-color: #1e293b; padding: 15px; border-radius: 10px; border: 2px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
-
-# --- 4. HILFSFUNKTIONEN ---
-def clear_v_input():
-    # Wir löschen den Inhalt im State, ohne das Widget direkt zu blockieren
-    st.session_state["v_input_key"] = ""
 
 try:
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
@@ -46,9 +53,8 @@ try:
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
 
     col1, col2 = st.columns(2)
-    # Wenn Name oder Deck wechselt, setzen wir das Voice-Feld zurück
-    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=clear_v_input)
-    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=clear_v_input)
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=trigger_reset)
+    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=trigger_reset)
     
     if n_sel != "Wählen...":
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
@@ -59,10 +65,13 @@ try:
         st.markdown('<div class="voice-area">', unsafe_allow_html=True)
         st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
         
-        # Wir nutzen einen stabilen Key für das Widget
-        v_in = st.text_input("9 Zahlen sprechen und ENTER:", key="v_input_key")
+        # Der Trick: Wir hängen die "form_iteration" an den Key. 
+        # So denkt Streamlit bei jedem Reset, es sei ein komplett neues Feld.
+        v_in = st.text_input(
+            "9 Zahlen sprechen und ENTER:", 
+            key=f"v_input_{st.session_state.form_iteration}"
+        )
         
-        # Logik zur Verarbeitung
         if v_in:
             all_digits = re.findall(r'\d', v_in) 
             if len(all_digits) >= 9:
@@ -78,9 +87,13 @@ try:
         c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with c[i]:
-                # Wir nehmen den Wert aus dem Session State, falls vorhanden, sonst DB
-                default_val = st.session_state.get(f"k_val_{i}", db_vals[i])
-                val = st.number_input(f"K{i+1}", 0, 9, value=default_val, key=f"k_val_{i}")
+                # Wert aus State laden (von Spracheingabe) oder DB-Wert nehmen
+                val_key = f"k_val_{i}"
+                current_val = st.session_state.get(val_key, db_vals[i])
+                
+                # Wir nutzen hier keinen festen Key im Widget, um Konflikte zu vermeiden, 
+                # sondern lassen den State die Steuerung übernehmen.
+                val = st.number_input(f"K{i+1}", 0, 9, value=current_val, key=f"num_{val_key}_{st.session_state.form_iteration}")
                 neue_werte.append(val)
         
         if st.button("🚀 ÄNDERUNGEN SPEICHERN", use_container_width=True):
@@ -89,12 +102,8 @@ try:
             st.balloons()
             st.success("Erfolgreich gespeichert!")
             
-            # Alle temporären Zustände löschen für den nächsten Durchgang
-            clear_v_input()
-            for i in range(9):
-                if f"k_val_{i}" in st.session_state:
-                    del st.session_state[f"k_val_{i}"]
-            
+            # Reset auslösen und Seite neu laden
+            trigger_reset()
             time.sleep(1)
             st.rerun()
 
