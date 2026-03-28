@@ -9,6 +9,7 @@ st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
 
 # --- 2. KONFIGURATION ---
 GID = "2025591169"
+# Stelle sicher, dass diese URL aktuell ist!
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaIWcjmJ5Nn5MsRR66ptz97MBjJ-S0O-B7TVp1Y4pq81Xc1Q0VLNzDFWDn6c9NcB4/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
@@ -20,8 +21,6 @@ def safe_int(val):
 
 if "form_iter" not in st.session_state:
     st.session_state.form_iter = 0
-
-# Merker für die Bestätigung der Zahlenkette
 if "last_chain" not in st.session_state:
     st.session_state.last_chain = None
 
@@ -53,18 +52,16 @@ if df is not None:
     st.title("💀 THE GANG HQ")
 
     col1, col2 = st.columns(2)
-    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + namen, on_change=trigger_reset)
-    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=trigger_reset)
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + namen, key="name_select", on_change=trigger_reset)
+    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), key="deck_select", on_change=trigger_reset)
     
     if n_sel != "Wählen...":
         sz = df[df.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
         db_vals = [safe_int(sz.iloc[0, start_c + i]) for i in range(9)]
 
-        # VOICE AREA
         st.markdown('<div class="voice-box">', unsafe_allow_html=True)
-        v_in = st.text_input("Zahlenkette diktieren/tippen & ENTER:", key=f"v_field_{st.session_state.form_iter}")
-        
+        v_in = st.text_input("Zahlenkette eingeben & ENTER:", key=f"v_field_{st.session_state.form_iter}")
         if v_in:
             digs = re.findall(r'\d', v_in)
             if len(digs) >= 9:
@@ -72,15 +69,10 @@ if df is not None:
                 st.session_state.last_chain = " | ".join(digs[:9])
                 st.session_state.form_iter += 1
                 st.rerun()
-            elif len(digs) > 0:
-                st.warning(f"⚠️ Nur {len(digs)} Zahlen erkannt. Bitte 9 Zahlen sprechen.")
-        
-        # Bestätigung anzeigen, wenn gerade eine Kette geladen wurde
         if st.session_state.last_chain:
             st.success(f"✅ Kette erkannt: {st.session_state.last_chain}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3x3 RASTER
         neue_werte = []
         cols = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
@@ -91,22 +83,27 @@ if df is not None:
         
         if st.button("🚀 JETZT INS SHEET SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
+            params = {"name": n_sel, "deck": str(d_sel), "werte": w_str}
+            
             with st.spinner("Sende Daten..."):
                 try:
-                    r = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
-                    if r.status_code == 200:
+                    # Wir nutzen jetzt einen expliziten GET-Aufruf mit Timeout
+                    r = requests.get(SCRIPT_URL, params=params, timeout=15)
+                    if "Erfolg" in r.text:
                         st.balloons()
-                        st.success("✅ Erledigt! Google Sheet ist aktuell.")
+                        st.success("✅ Erfolg! Daten sind im Sheet.")
                         trigger_reset()
                         time.sleep(1)
                         st.rerun()
-                    else: st.error(f"Fehler: {r.status_code}")
-                except Exception as e: st.error(f"Verbindung fehlgeschlagen: {e}")
+                    else:
+                        st.error(f"Google Script sagt: {r.text}")
+                except Exception as e:
+                    st.error(f"📡 Verbindungsproblem: {e}")
 
-    # ADMIN BEREICH & TAUSCHANALYSE
+    # --- ADMIN / TAUSCH ---
     st.markdown("---")
-    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK (Live-Daten)")
+    if st.text_input("Admin", type="password") == ADMIN_PASSWORT:
+        st.markdown("### 🕵️‍♂️ TAUSCH-CHECK")
         gbt, bdr = [], []
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
@@ -117,7 +114,6 @@ if df is not None:
                     cn, val = df.columns[sc+i], safe_int(row.iloc[sc+i])
                     if val >= 2: gbt.append({"s": sp, "k": cn})
                     elif val == 0: bdr.append({"s": sp, "k": cn, "f": bz})
-
         bdr = sorted(bdr, key=lambda x: x['f'], reverse=True)
         t1, t2 = st.tabs(["🌕 Gold", "💎 Diamant"])
         for tab, is_d in zip([t1, t2], [False, True]):
