@@ -28,6 +28,11 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# Callback-Funktion zum Leeren des Voice-Feldes bei Deck/Namenswechsel
+def reset_voice_field():
+    if "voice_box" in st.session_state:
+        st.session_state.voice_box = ""
+
 try:
     df_raw = pd.read_csv(SHEET_URL, dtype={0: str})
     df_raw = df_raw[df_raw.iloc[:, 0].notna() & (df_raw.iloc[:, 0].str.strip() != "")]
@@ -41,38 +46,35 @@ try:
     st.markdown("### 📝 KARTEN AKTUALISIEREN")
 
     col1, col2 = st.columns(2)
-    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen)
-    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)))
+    # Bei Änderung des Namens oder Decks wird das Sprachfeld geleert
+    n_sel = col1.selectbox("Wer bist du?", ["Wählen..."] + spieler_namen, on_change=reset_voice_field)
+    d_sel = col2.selectbox("Welches Deck?", list(range(1, 16)), on_change=reset_voice_field)
     
     if n_sel != "Wählen...":
         s_zeile = df_raw[df_raw.iloc[:, 0] == n_sel]
         start_c = 1 + ((d_sel - 1) * 9)
         db_vals = [safe_int(s_zeile.iloc[0, start_c + i]) for i in range(9)]
 
-        # --- VERBESSERTE VOICE LOGIK FÜR ZAHLENKETTEN ---
+        # --- VOICE LOGIK ---
         st.markdown('<div class="voice-area">', unsafe_allow_html=True)
         st.write("🎙️ **SCHNELL-EINGABE (ZAHLENKETTE)**")
         v_in = st.text_input("Spreche 9 Zahlen (z.B. 101131102) und drücke ENTER:", key="voice_box")
         
         if v_in:
-            # RE-LOGIK: Findet jede einzelne Ziffer (0-9), auch wenn sie direkt hintereinander stehen
             all_digits = re.findall(r'\d', v_in) 
-            
             if len(all_digits) >= 9:
                 for i in range(9):
-                    # Schreibe die Ziffern direkt in den Session State der Number Inputs
                     st.session_state[f"k_val_{i}"] = int(all_digits[i])
                 st.success(f"✅ Kette erkannt: {' | '.join(all_digits[:9])}")
             else:
                 st.warning(f"⚠️ Kette zu kurz! Nur {len(all_digits)} von 9 Zahlen erkannt.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3x3 Raster - Die Inputs nutzen die Keys für das Update
+        # 3x3 Raster
         neue_werte = []
         c = st.columns(3) + st.columns(3) + st.columns(3)
         for i in range(9):
             with c[i]:
-                # Wir setzen den Initialwert aus der DB, aber lassen ihn vom State überschreiben
                 val = st.number_input(f"K{i+1}", 0, 9, value=db_vals[i], key=f"k_val_{i}")
                 neue_werte.append(val)
         
@@ -81,6 +83,7 @@ try:
             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": werte_str})
             st.balloons()
             st.success("Erfolgreich gespeichert!")
+            reset_voice_field() # Feld nach dem Speichern leeren
             time.sleep(1)
             st.rerun()
 
@@ -105,7 +108,6 @@ try:
                     if val >= 2: gebot.append({"s": sp, "k": cn})
                     elif val == 0: bedarf.append({"s": sp, "k": cn, "f": bz, "d": dia, "did": f"{sp}_D{d}"})
 
-        # Sortierung: 8/9, 7/9... dann nach Diamanten
         bedarf = sorted(bedarf, key=lambda x: (x['f'], x['d']), reverse=True)
         
         def get_matches(is_dia):
