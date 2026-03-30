@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
+import random
 
 # --- 1. SETUP ---
 st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
@@ -17,16 +18,19 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. DATEN LADEN ---
-@st.cache_data(ttl=2)
-def load_data(ts):
+# --- 3. DATEN LADEN (Aggressiver Cache-Bust) ---
+def load_data():
+    # Wir hängen eine Zufallszahl an, damit Google NIEMALS eine alte Datei schickt
+    cache_buster = random.randint(1, 1000000)
+    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cb={cache_buster}"
     try:
-        url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cache={ts}"
         df = pd.read_csv(url, dtype={0: str})
         return df[df.iloc[:, 0].notna()]
-    except: return None
+    except:
+        return None
 
-df = load_data(int(time.time()))
+# Wir laden die Daten bei jedem Skript-Durchlauf komplett neu (kein st.cache_data)
+df = load_data()
 
 if df is not None:
     st.title("💀 THE GANG HQ")
@@ -52,16 +56,17 @@ if df is not None:
         
         if st.button("🚀 SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
-            with st.spinner("Speichere..."):
+            with st.spinner("Übertrage an Google..."):
                 try:
+                    # Wir warten kurz, bis das Script fertig ist
                     requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
                     st.balloons()
-                    st.cache_data.clear()
+                    time.sleep(1) # Kurze Pause für Google
                     st.rerun()
                 except:
-                    st.error("Fehler beim Senden.")
+                    st.error("Verbindung zum Sheet unterbrochen.")
 
-    # --- UNTEN: ADMIN BEREICH (MIT DIAMANTEN-PRIO) ---
+    # --- UNTEN: ADMIN BEREICH (KLAPPT NUR BEI PASSWORT AUF) ---
     st.markdown("---")
     admin_input = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     
@@ -85,10 +90,8 @@ if df is not None:
         for tab, is_d in zip([t_gold, t_dia], [False, True]):
             with tab:
                 weg, found = set(), False
-                # Hier greift die Priorität: Höchster Fortschritt (f) zuerst
                 bdr_s = sorted(bdr, key=lambda x: x['f'], reverse=True)
                 for b in bdr_s:
-                    # Filtert nach Diamant-Karten (D) oder Gold
                     if (("(D)" in b["k"]) == is_d):
                         for g in gbt:
                             if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
@@ -96,11 +99,9 @@ if df is not None:
                                     st.success(f"🌟 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (9/9)")
                                 elif b['f'] == 7:
                                     st.info(f"🚀 **PRIO 1:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (8/9)")
-                                elif b['f'] == 6:
-                                    st.warning(f"📈 **PRIO 2:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (7/9)")
                                 else:
                                     st.write(f"🤝 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
                                 weg.add(g["s"])
                                 found = True
                                 break
-                if not found: st.write("Keine Täusche in dieser Kategorie verfügbar.")
+                if not found: st.write("Keine Täusche verfügbar.")
