@@ -18,22 +18,21 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. DATEN LADEN (Aggressiv ohne Cache für maximale Aktualität) ---
+# --- 3. DATEN LADEN ---
 def load_data():
-    cache_buster = random.randint(1, 1000000)
-    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cb={cache_buster}"
+    cb = random.randint(1, 1000000)
+    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cb={cb}"
     try:
         df = pd.read_csv(url, dtype={0: str})
         return df[df.iloc[:, 0].notna()]
-    except:
-        return None
+    except: return None
 
 df = load_data()
 
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # --- OBEN: SPIELER-BEREICH ---
+    # --- SPIELER-BEREICH ---
     namen = df.iloc[:, 0].unique().tolist()
     c1, c2 = st.columns(2)
     n_sel = c1.selectbox("Wer bist du?", ["Wählen..."] + namen)
@@ -41,8 +40,8 @@ if df is not None:
     
     if n_sel != "Wählen...":
         sz = df[df.iloc[:, 0] == n_sel]
-        start_c = 1 + ((d_sel - 1) * 9)
-        db_vals = [safe_int(sz.iloc[0, start_c + i]) for i in range(9)]
+        sc = 1 + ((d_sel - 1) * 9)
+        db_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
         
         st.subheader(f"🃏 Deck {d_sel} ({sum(1 for v in db_vals if v > 0)}/9)")
         neue_werte = []
@@ -54,28 +53,27 @@ if df is not None:
         
         if st.button("🚀 SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
-            with st.spinner("Übertrage an Google..."):
-                try:
-                    requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
-                    st.balloons()
-                    time.sleep(1)
-                    st.rerun()
-                except:
-                    st.error("Fehler beim Senden.")
+            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str})
+            st.balloons()
+            time.sleep(1)
+            st.rerun()
 
-    # --- UNTEN: ADMIN BEREICH ---
+    # --- ADMIN BEREICH ---
     st.markdown("---")
-    admin_input = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
-    
-    if admin_input == ADMIN_PASSWORT:
-        st.markdown("### 🎯 AKTUELLE TAUSCH-PRIORITÄTEN")
+    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
+        st.markdown("### 🎯 PRIORISIERTE TAUSCHVORSCHLÄGE")
         
         gbt, bdr = [], []
+        # Analyse der Decks auf Diamanten-Dichte
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
-                # Gesamtbesitz im Deck
+                cols_deck = df.columns[sc:sc+9]
+                
+                # Wie viele Diamanten-Karten hat dieses Deck INSGESAMT laut Header?
+                dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
+                # Wie viele Karten hat der Spieler bereits?
                 besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                 
                 for i in range(9):
@@ -84,43 +82,36 @@ if df is not None:
                     if val >= 2: 
                         gbt.append({"s": sp, "k": cn})
                     elif val == 0: 
-                        bdr.append({"s": sp, "k": cn, "f": besitz})
+                        # Wir speichern die 'dia_dichte' als Prioritäts-Faktor
+                        bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte})
 
-        t_gold, t_dia = st.tabs(["🌕 GOLD KARTEN", "💎 DIAMANT KARTEN"])
+        t_gold, t_dia = st.tabs(["🌕 GOLD", "💎 DIAMANT (Prio: Hoher Ertrag)"])
         
-        # --- LOGIK FÜR GOLD ---
         with t_gold:
-            weg_g, found_g = set(), False
+            weg_g = set()
             bdr_g = sorted([b for b in bdr if "(D)" not in b["k"]], key=lambda x: x['f'], reverse=True)
             for b in bdr_g:
                 for g in gbt:
                     if "(D)" not in g["k"] and g["s"] not in weg_g and g["s"] != b["s"] and g["k"] == b["k"]:
-                        if b['f'] == 8: st.success(f"🌟 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (9/9)")
-                        elif b['f'] == 7: st.info(f"🚀 **PRIO 1:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (8/9)")
-                        else: st.write(f"🤝 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
+                        st.write(f"🤝 **{g['k']}**: {g['s']} ➔ {b['s']} ({b['f']}/9)")
                         weg_g.add(g["s"])
-                        found_g = True
                         break
-            if not found_g: st.write("Keine Gold-Täusche.")
 
-        # --- LOGIK FÜR DIAMANT (PRIO AUF DIE MEISTEN KARTEN IM DECK) ---
         with t_dia:
-            weg_d, found_d = set(), False
-            # Wir filtern nur Diamanten und sortieren nach höchstem Fortschritt 'f'
-            bdr_d = sorted([b for b in bdr if "(D)" in b["k"]], key=lambda x: x['f'], reverse=True)
+            weg_d = set()
+            # SORTIERUNG: Erst nach Füllstand (f), dann nach Diamanten-Dichte (dichte)
+            bdr_d = sorted([b for b in bdr if "(D)" in b["k"]], 
+                           key=lambda x: (x['f'], x['dichte']), reverse=True)
             
             for b in bdr_d:
                 for g in gbt:
                     if "(D)" in g["k"] and g["s"] not in weg_d and g["s"] != b["s"] and g["k"] == b["k"]:
-                        # Hervorhebung für fast volle Decks
-                        if b['f'] >= 7:
-                            st.success(f"💎 **DIAMANT-FINISH:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
-                        elif b['f'] >= 5:
-                            st.info(f"🔥 **STARKE KOMBI:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
+                        # Anzeige wie viel "Wert" das Deck hat
+                        label = "💰 HOHER ERTRAG" if b['dichte'] >= 3 else "💎 DIAMANT"
+                        if b['f'] >= 8:
+                            st.success(f"🌟 **FINISHER ({label}):** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9)")
                         else:
-                            st.write(f"💎 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
+                            st.info(f"🔥 **{label}:** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9 - {b['dichte']} Dia-Karten im Deck)")
                         
                         weg_d.add(g["s"])
-                        found_d = True
                         break
-            if not found_d: st.write("Keine Diamant-Täusche verfügbar.")
