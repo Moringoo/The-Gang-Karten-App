@@ -18,9 +18,8 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. DATEN LADEN (Aggressiver Cache-Bust) ---
+# --- 3. DATEN LADEN (Aggressiv ohne Cache für maximale Aktualität) ---
 def load_data():
-    # Wir hängen eine Zufallszahl an, damit Google NIEMALS eine alte Datei schickt
     cache_buster = random.randint(1, 1000000)
     url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cb={cache_buster}"
     try:
@@ -29,7 +28,6 @@ def load_data():
     except:
         return None
 
-# Wir laden die Daten bei jedem Skript-Durchlauf komplett neu (kein st.cache_data)
 df = load_data()
 
 if df is not None:
@@ -58,15 +56,14 @@ if df is not None:
             w_str = ",".join([str(int(x)) for x in neue_werte])
             with st.spinner("Übertrage an Google..."):
                 try:
-                    # Wir warten kurz, bis das Script fertig ist
                     requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
                     st.balloons()
-                    time.sleep(1) # Kurze Pause für Google
+                    time.sleep(1)
                     st.rerun()
                 except:
-                    st.error("Verbindung zum Sheet unterbrochen.")
+                    st.error("Fehler beim Senden.")
 
-    # --- UNTEN: ADMIN BEREICH (KLAPPT NUR BEI PASSWORT AUF) ---
+    # --- UNTEN: ADMIN BEREICH ---
     st.markdown("---")
     admin_input = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     
@@ -78,30 +75,52 @@ if df is not None:
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
+                # Gesamtbesitz im Deck
                 besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                
                 for i in range(9):
                     cn = df.columns[sc+i]
                     val = safe_int(row.iloc[sc+i])
-                    if val >= 2: gbt.append({"s": sp, "k": cn})
-                    elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz})
+                    if val >= 2: 
+                        gbt.append({"s": sp, "k": cn})
+                    elif val == 0: 
+                        bdr.append({"s": sp, "k": cn, "f": besitz})
 
         t_gold, t_dia = st.tabs(["🌕 GOLD KARTEN", "💎 DIAMANT KARTEN"])
         
-        for tab, is_d in zip([t_gold, t_dia], [False, True]):
-            with tab:
-                weg, found = set(), False
-                bdr_s = sorted(bdr, key=lambda x: x['f'], reverse=True)
-                for b in bdr_s:
-                    if (("(D)" in b["k"]) == is_d):
-                        for g in gbt:
-                            if g["s"] not in weg and g["s"] != b["s"] and g["k"] == b["k"]:
-                                if b['f'] == 8:
-                                    st.success(f"🌟 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (9/9)")
-                                elif b['f'] == 7:
-                                    st.info(f"🚀 **PRIO 1:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (8/9)")
-                                else:
-                                    st.write(f"🤝 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
-                                weg.add(g["s"])
-                                found = True
-                                break
-                if not found: st.write("Keine Täusche verfügbar.")
+        # --- LOGIK FÜR GOLD ---
+        with t_gold:
+            weg_g, found_g = set(), False
+            bdr_g = sorted([b for b in bdr if "(D)" not in b["k"]], key=lambda x: x['f'], reverse=True)
+            for b in bdr_g:
+                for g in gbt:
+                    if "(D)" not in g["k"] and g["s"] not in weg_g and g["s"] != b["s"] and g["k"] == b["k"]:
+                        if b['f'] == 8: st.success(f"🌟 **FINISHER:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (9/9)")
+                        elif b['f'] == 7: st.info(f"🚀 **PRIO 1:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** (8/9)")
+                        else: st.write(f"🤝 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
+                        weg_g.add(g["s"])
+                        found_g = True
+                        break
+            if not found_g: st.write("Keine Gold-Täusche.")
+
+        # --- LOGIK FÜR DIAMANT (PRIO AUF DIE MEISTEN KARTEN IM DECK) ---
+        with t_dia:
+            weg_d, found_d = set(), False
+            # Wir filtern nur Diamanten und sortieren nach höchstem Fortschritt 'f'
+            bdr_d = sorted([b for b in bdr if "(D)" in b["k"]], key=lambda x: x['f'], reverse=True)
+            
+            for b in bdr_d:
+                for g in gbt:
+                    if "(D)" in g["k"] and g["s"] not in weg_d and g["s"] != b["s"] and g["k"] == b["k"]:
+                        # Hervorhebung für fast volle Decks
+                        if b['f'] >= 7:
+                            st.success(f"💎 **DIAMANT-FINISH:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
+                        elif b['f'] >= 5:
+                            st.info(f"🔥 **STARKE KOMBI:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
+                        else:
+                            st.write(f"💎 **Tausch:** mit **{g['k']}** von **{g['s']}** an **{b['s']}** ({b['f']}/9)")
+                        
+                        weg_d.add(g["s"])
+                        found_d = True
+                        break
+            if not found_d: st.write("Keine Diamant-Täusche verfügbar.")
