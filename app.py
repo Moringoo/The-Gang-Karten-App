@@ -7,10 +7,17 @@ import random
 # --- 1. SETUP ---
 st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
 
-# --- 2. KONFIGURATION ---
+# --- 2. KONFIGURATION & WERTE ---
 GID = "2025591169"
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqvISwbnj74Ab7_NO5X3AeeHyvDeWFNFREiWd420_QBdlKyMWaNI6ZL9I0wyoLjEI/exec" 
 ADMIN_PASSWORT = "gang2026" 
+
+# Belohnungstabelle für die Priorisierung (Kugeln als Wertfaktor)
+DECK_WERTE = {
+    1: 500, 2: 550, 3: 750, 4: 1000, 5: 1600, 
+    6: 2500, 7: 3000, 8: 4000, 9: 4500, 10: 6000, 
+    11: 6500, 12: 10000, 13: 1500, 14: 4000, 15: 6100
+}
 
 def safe_int(val):
     try:
@@ -59,10 +66,9 @@ if df is not None:
     # --- ADMIN BEREICH ---
     st.markdown("---")
     if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
-        st.markdown("### 🎯 INTELLIGENTE TAUSCH-OPTIMIERUNG")
+        st.markdown("### 🎯 PROFIT-OPTIMIERTE TAUSCHVORSCHLÄGE")
         
         gbt, bdr = [], []
-        # 1. Alle Gebote und Bedarfe sammeln
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
@@ -70,38 +76,32 @@ if df is not None:
                 cols_deck = df.columns[sc:sc+9]
                 dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
                 besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                deck_wert = DECK_WERTE.get(d, 0)
+                
                 for i in range(9):
                     cn = df.columns[sc+i]
                     val = safe_int(row.iloc[sc+i])
-                    if val >= 2: gbt.append({"s": sp, "k": cn})
-                    elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte})
+                    if val >= 2: 
+                        gbt.append({"s": sp, "k": cn})
+                    elif val == 0: 
+                        bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, "wert": deck_wert, "deck_nr": d})
 
-        # 2. KNAPPHEITS-CHECK: Wie viele Leute können Karte X geben?
-        knappheit = {}
-        for g in gbt:
-            knappheit[g['k']] = knappheit.get(g['k'], 0) + 1
-
-        # 3. Tausche zuweisen (Spezialisten zuerst!)
         def process_trades(filter_dia):
             weg_geber = set()
-            # Sortierung: 
-            # 1. Höchster Füllstand (f) 
-            # 2. Meiste Dia-Karten (dichte)
-            # 3. SELTENSTE Karte zuerst (knappheit) -> Damit Joker für andere Decks frei bleiben
             akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
-            akt_bdr = sorted(akt_bdr, key=lambda x: (x['f'], x['dichte']), reverse=True)
+            
+            # Sortierung: 
+            # 1. Finisher (f=8) zuerst
+            # 2. Höchster Deck-Wert (Kugeln)
+            # 3. Diamanten-Dichte
+            akt_bdr = sorted(akt_bdr, key=lambda x: (x['f'], x['wert'], x['dichte']), reverse=True)
             
             results = []
             for b in akt_bdr:
-                # Finde alle Geber für diese Karte, die noch nicht weg sind
-                mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b['s']]
-                
+                mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
                 if mögliche_geber:
-                    # Nimm den Geber, der am WENIGSTEN andere Karten anbieten kann (Spezialist)
-                    # Oder einfach den ersten, da die Knappheit der Karte selbst schon durch die 'bdr'-Sortierung oben indirekt fließt
-                    # Wir sortieren die Geber hier nach der Anzahl ihrer Gesamtgebote
+                    # Spezialisten-Check: Geber mit den wenigsten Gesamtangeboten zuerst nehmen
                     mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
-                    
                     best_g = mögliche_geber[0]
                     results.append((best_g, b))
                     weg_geber.add(best_g['s'])
@@ -112,10 +112,11 @@ if df is not None:
         for tab, is_dia in zip([t_gold, t_dia], [False, True]):
             with tab:
                 trades = process_trades(is_dia)
-                if not trades: st.write("Keine optimierten Tausche möglich.")
+                if not trades: st.write("Keine Täusche möglich.")
                 for g, b in trades:
-                    label = "💰 ERTRAGREICH" if b['dichte'] >= 3 else ("💎 DIA" if is_dia else "🌕 GOLD")
+                    # Info-Text für die Belohnung
+                    kugeln = DECK_WERTE.get(b['deck_nr'], 0)
                     if b['f'] >= 8:
-                        st.success(f"🌟 **FINISHER:** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9)")
+                        st.success(f"🌟 **FINISHER ({kugeln} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (Deck {b['deck_nr']})")
                     else:
-                        st.info(f"🤝 **{label}:** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9)")
+                        st.info(f"🤝 **TAUSCH ({kugeln} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (Deck {b['deck_nr']})")
