@@ -12,7 +12,6 @@ GID = "2025591169"
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqvISwbnj74Ab7_NO5X3AeeHyvDeWFNFREiWd420_QBdlKyMWaNI6ZL9I0wyoLjEI/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
-# Belohnungstabelle für die Priorisierung (Kugeln als Wertfaktor)
 DECK_WERTE = {
     1: 500, 2: 550, 3: 750, 4: 1000, 5: 1600, 
     6: 2500, 7: 3000, 8: 4000, 9: 4500, 10: 6000, 
@@ -78,29 +77,32 @@ if df is not None:
                 besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                 deck_wert = DECK_WERTE.get(d, 0)
                 
+                # SCORE BERECHNUNG:
+                # Priorität 1: Finisher (8/9) -> 1.000.000 Punkte
+                # Priorität 2: Deck-Wert (Munition)
+                # Priorität 3: Diamanten-Dichte
+                score = (1000000 if besitz >= 8 else (besitz * 1000)) + deck_wert + (dia_dichte * 10)
+
                 for i in range(9):
                     cn = df.columns[sc+i]
                     val = safe_int(row.iloc[sc+i])
                     if val >= 2: 
                         gbt.append({"s": sp, "k": cn})
                     elif val == 0: 
-                        bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, "wert": deck_wert, "deck_nr": d})
+                        bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, "wert": deck_wert, "deck_nr": d, "score": score})
 
         def process_trades(filter_dia):
             weg_geber = set()
             akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
             
-            # Sortierung: 
-            # 1. Finisher (f=8) zuerst
-            # 2. Höchster Deck-Wert (Kugeln)
-            # 3. Diamanten-Dichte
-            akt_bdr = sorted(akt_bdr, key=lambda x: (x['f'], x['wert'], x['dichte']), reverse=True)
+            # SORTIERUNG nach dem mathematischen Score
+            akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             
             results = []
             for b in akt_bdr:
                 mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
                 if mögliche_geber:
-                    # Spezialisten-Check: Geber mit den wenigsten Gesamtangeboten zuerst nehmen
+                    # Spezialisten-Check (Wer hat am wenigsten Karten zum Geben?)
                     mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
                     best_g = mögliche_geber[0]
                     results.append((best_g, b))
@@ -108,13 +110,11 @@ if df is not None:
             return results
 
         t_gold, t_dia = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
-        
         for tab, is_dia in zip([t_gold, t_dia], [False, True]):
             with tab:
                 trades = process_trades(is_dia)
                 if not trades: st.write("Keine Täusche möglich.")
                 for g, b in trades:
-                    # Info-Text für die Belohnung
                     kugeln = DECK_WERTE.get(b['deck_nr'], 0)
                     if b['f'] >= 8:
                         st.success(f"🌟 **FINISHER ({kugeln} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (Deck {b['deck_nr']})")
