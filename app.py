@@ -18,7 +18,7 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# --- 3. DATEN LADEN ---
+# --- 3. DATEN LADEN (Aggressiv ohne Cache für maximale Aktualität) ---
 def load_data():
     cb = random.randint(1, 1000000)
     url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cb={cb}"
@@ -32,7 +32,7 @@ df = load_data()
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # --- SPIELER-BEREICH ---
+    # --- OBEN: SPIELER-BEREICH (Karten eingeben) ---
     namen = df.iloc[:, 0].unique().tolist()
     c1, c2 = st.columns(2)
     n_sel = c1.selectbox("Wer bist du?", ["Wählen..."] + namen)
@@ -53,18 +53,22 @@ if df is not None:
         
         if st.button("🚀 SPEICHERN", use_container_width=True):
             w_str = ",".join([str(int(x)) for x in neue_werte])
-            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str})
-            st.balloons()
-            time.sleep(1)
-            st.rerun()
+            with st.spinner("Speichere im Google Sheet..."):
+                try:
+                    requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str}, timeout=15)
+                    st.balloons()
+                    time.sleep(1)
+                    st.rerun()
+                except:
+                    st.error("Fehler beim Senden. Bitte erneut versuchen.")
 
-    # --- ADMIN BEREICH ---
+    # --- UNTEN: ADMIN BEREICH (Tauschanalyse) ---
     st.markdown("---")
-    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
+    if st.text_input("Admin-Passwort für Tauschanalyse", type="password") == ADMIN_PASSWORT:
         st.markdown("### 🎯 PRIORISIERTE TAUSCHVORSCHLÄGE")
         
         gbt, bdr = [], []
-        # Analyse der Decks auf Diamanten-Dichte
+        # Analyse der Decks auf Diamanten-Dichte und Füllstand
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
@@ -73,7 +77,7 @@ if df is not None:
                 
                 # Wie viele Diamanten-Karten hat dieses Deck INSGESAMT laut Header?
                 dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
-                # Wie viele Karten hat der Spieler bereits?
+                # Wie viele Karten hat der Spieler bereits in diesem Deck?
                 besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                 
                 for i in range(9):
@@ -82,36 +86,47 @@ if df is not None:
                     if val >= 2: 
                         gbt.append({"s": sp, "k": cn})
                     elif val == 0: 
-                        # Wir speichern die 'dia_dichte' als Prioritäts-Faktor
                         bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte})
 
-        t_gold, t_dia = st.tabs(["🌕 GOLD", "💎 DIAMANT (Prio: Hoher Ertrag)"])
+        t_gold, t_dia = st.tabs(["🌕 GOLD KARTEN", "💎 DIAMANT (Hoher Ertrag zuerst)"])
         
+        # --- TAB: GOLD ---
         with t_gold:
-            weg_g = set()
+            weg_g, found_g = set(), False
             bdr_g = sorted([b for b in bdr if "(D)" not in b["k"]], key=lambda x: x['f'], reverse=True)
             for b in bdr_g:
                 for g in gbt:
                     if "(D)" not in g["k"] and g["s"] not in weg_g and g["s"] != b["s"] and g["k"] == b["k"]:
-                        st.write(f"🤝 **{g['k']}**: {g['s']} ➔ {b['s']} ({b['f']}/9)")
+                        # Gold-Finisher Hervorhebung
+                        if b['f'] >= 8:
+                            st.success(f"🌟 **FINISHER:** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9)")
+                        else:
+                            st.write(f"🤝 **{g['k']}**: {g['s']} ➔ {b['s']} ({b['f']}/9)")
                         weg_g.add(g["s"])
+                        found_g = True
                         break
+            if not found_g: st.write("Keine Gold-Täusche verfügbar.")
 
+        # --- TAB: DIAMANT ---
         with t_dia:
-            weg_d = set()
+            weg_d, found_d = set(), False
             # SORTIERUNG: Erst nach Füllstand (f), dann nach Diamanten-Dichte (dichte)
+            # Damit Decks mit mehr Diamanten (mehr Patronen) oben stehen.
             bdr_d = sorted([b for b in bdr if "(D)" in b["k"]], 
                            key=lambda x: (x['f'], x['dichte']), reverse=True)
             
             for b in bdr_d:
                 for g in gbt:
                     if "(D)" in g["k"] and g["s"] not in weg_d and g["s"] != b["s"] and g["k"] == b["k"]:
-                        # Anzeige wie viel "Wert" das Deck hat
                         label = "💰 HOHER ERTRAG" if b['dichte'] >= 3 else "💎 DIAMANT"
                         if b['f'] >= 8:
                             st.success(f"🌟 **FINISHER ({label}):** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9)")
+                        elif b['f'] >= 7:
+                            st.info(f"🚀 **PRIO 1 ({label}):** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9)")
                         else:
-                            st.info(f"🔥 **{label}:** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9 - {b['dichte']} Dia-Karten im Deck)")
+                            st.write(f"🤝 **{label}:** {g['k']} von {g['s']} ➔ {b['s']} ({b['f']}/9 - {b['dichte']} Dia-Karten im Deck)")
                         
                         weg_d.add(g["s"])
+                        found_d = True
                         break
+            if not found_d: st.write("Keine Diamant-Täusche verfügbar.")
