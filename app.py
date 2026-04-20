@@ -61,25 +61,22 @@ if df is not None:
             with c2:
                 user_input = st.text_input(
                     f"Eingabe D{d}", value=current_str, key=f"in_{n_sel}_{d}", 
-                    label_visibility="collapsed", max_chars=12 # Puffer für Leerzeichen bei Sprache
+                    label_visibility="collapsed", max_chars=15 
                 )
             with c3:
                 if st.button(f"💾 Speichern D{d}", key=f"btn_{n_sel}_{d}"):
-                    # Filtert alles außer Zahlen (entfernt Leerzeichen der Spracheingabe)
                     clean_input = "".join([c for c in user_input if c.isdigit()])
                     clean_input = clean_input.ljust(9, '0')[:9]
                     w_str = ",".join(list(clean_input))
                     
-                    with st.spinner("Wird im Sheet eingetragen..."):
+                    with st.spinner("Wird übertragen..."):
                         try:
-                            # Wir senden den Befehl mit Timeout-Puffer
                             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d, "werte": w_str}, timeout=5)
                             st.success(f"Deck {d} gespeichert!")
                             time.sleep(0.5)
                             st.rerun()
                         except:
-                            # Falls das Script langsam ist, prüfen wir nur ob es im Sheet ankommt
-                            st.warning("Verbindung langsam – bitte im Sheet prüfen, ob es da ist.")
+                            st.warning("Verbindung langsam – bitte im Sheet prüfen.")
                             time.sleep(2)
                             st.rerun()
 
@@ -96,4 +93,4 @@ if df is not None:
                 sc = 1 + ((d - 1) * 9)
                 cols_deck = df.columns[sc:sc+9]
                 dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
-                besitz = sum(1 for i in range(9) if safe_int(row.
+                # HIER WAR DER FEHLER: Klammern für '
