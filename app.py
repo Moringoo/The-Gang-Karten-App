@@ -42,32 +42,31 @@ if df is not None:
     
     if n_sel != "Wählen...":
         st.markdown(f"### 📋 Deine Deck-Übersicht ({n_sel})")
-        st.info("🎤 Bearbeite alle Decks nacheinander und klicke am Ende auf den großen Speicher-Button.")
+        st.info("🎤 Bearbeite alle Decks (Sprache/Tippen) und klicke dann auf den großen Speicher-Button.")
         
         sz = df[df.iloc[:, 0] == n_sel]
         alle_inputs = {}
 
-        # Speicher-Funktion definieren
+        # Zentrale Speicher-Funktion
         def save_all():
             erfolg = 0
-            with st.spinner("Übertrage alle Daten..."):
+            with st.spinner("Übertrage alle Daten an das HQ..."):
                 for d_nr, werte_str in alle_inputs.items():
-                    # Nur speichern, wenn sich die Daten vom Original unterscheiden (optional, hier einfach alle)
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
                     try:
-                        requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=5)
+                        requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=8)
                         erfolg += 1
                     except:
                         pass
             if erfolg > 0:
                 st.balloons()
-                st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
-                time.sleep(1)
+                st.success(f"Mission erfüllt! {erfolg} Decks wurden im Sheet aktualisiert.")
+                time.sleep(2)
                 st.rerun()
 
-        # Oberer Speicher-Button
-        if st.button("🚀 ALLE DECKS JETZT SPEICHERN", use_container_width=True, key="save_top"):
+        # Oberer Button für schnellen Zugriff
+        if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_top"):
             save_all()
 
         st.markdown("---")
@@ -78,25 +77,25 @@ if df is not None:
             besitz = sum(1 for v in current_vals if v > 0)
             fehlen = 9 - besitz
             current_str = "".join([str(v) for v in current_vals])
+            kugeln = DECK_WERTE.get(d, 0)
             
-            c1, c2 = st.columns([2, 5])
+            c1, c2 = st.columns([3, 4])
             with c1:
                 st.markdown(f"**DECK {d}**")
-                st.caption(f"{besitz}/9 (noch {fehlen} fehlen)")
+                st.caption(f"Status: {besitz}/9 (noch {fehlen} fehlen) | 💰 {kugeln} Kugeln")
             with c2:
-                # Wir speichern die Inputs in einem Dictionary
                 alle_inputs[d] = st.text_input(
-                    f"Zahlen D{d}", value=current_str, key=f"in_d{d}", label_visibility="collapsed"
+                    f"Eingabe D{d}", value=current_str, key=f"in_d{d}", label_visibility="collapsed"
                 )
 
         st.markdown("---")
-        # Unterer Speicher-Button
-        if st.button("🚀 ALLE DECKS JETZT SPEICHERN", use_container_width=True, key="save_bottom"):
+        # Unterer Button (falls man ganz nach unten gescrollt hat)
+        if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
             save_all()
 
     # --- ADMIN BEREICH ---
     st.markdown("---")
-    pwd = st.text_input("Admin-Passwort", type="password")
+    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
         st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE")
         gbt, bdr = [], []
@@ -137,6 +136,6 @@ if df is not None:
                 if not trades: st.write("Keine Täusche verfügbar.")
                 else:
                     for g, b in trades:
-                        kugeln = DECK_WERTE.get(b['deck_nr'], 0)
-                        if b['f'] >= 8: st.success(f"🌟 **FINISHER:** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
-                        else: st.info(f"🤝 **TAUSCH:** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
+                        k_belohnung = DECK_WERTE.get(b['deck_nr'], 0)
+                        if b['f'] >= 8: st.success(f"🌟 **FINISHER ({k_belohnung} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
+                        else: st.info(f"🤝 **TAUSCH ({k_belohnung} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
