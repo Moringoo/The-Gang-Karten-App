@@ -48,14 +48,12 @@ if df is not None:
         
         sz = df[df.iloc[:, 0] == n_sel]
         
-        # Alle 15 Decks untereinander (Jedes Deck hat 9 Karten!)
+        # Alle 15 Decks untereinander
         for d in range(1, 16):
-            # sc berechnet den Startpunkt: Deck 1 ab Spalte 1, Deck 2 ab Spalte 10 usw.
             sc = 1 + ((d - 1) * 9)
-            
-            # Wir lesen wieder 9 Werte ein
             current_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
             besitz = sum(1 for v in current_vals if v > 0)
+            fehlen = 9 - besitz
             current_str = "".join([str(v) for v in current_vals])
             
             # Layout Zeile
@@ -63,10 +61,10 @@ if df is not None:
             
             with c1:
                 st.markdown(f"**DECK {d}**")
-                st.caption(f"Status: {besitz}/9 Karten | {DECK_WERTE.get(d)} Kugeln")
+                # Hier ist die gewünschte Anzeige: z.B. 3/9 (noch 6 fehlen)
+                st.caption(f"Status: {besitz}/9 (noch {fehlen} fehlen) | {DECK_WERTE.get(d)} Kugeln")
             
             with c2:
-                # Eingabefeld für 9 Zahlen
                 user_input = st.text_input(
                     f"Zahlen Deck {d}", 
                     value=current_str, 
@@ -76,9 +74,7 @@ if df is not None:
             
             with c3:
                 if st.button(f"💾 Speichern", key=f"save_d{d}_{n_sel}"):
-                    # Nur Zahlen behalten
                     clean_input = "".join([c for c in user_input if c.isdigit()])
-                    # Auf exakt 9 Stellen bringen
                     clean_input = clean_input.ljust(9, '0')[:9]
                     w_str = ",".join(list(clean_input))
                     
