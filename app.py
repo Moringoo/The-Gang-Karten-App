@@ -24,96 +24,127 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
+# VERBESSERTE LADE-FUNKTION (Erzwingt frische Daten)
 def load_data():
-    cb = random.randint(1, 1000000)
-    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cb={cb}"
+    # Extrem-Cache-Buster: Jede Sekunde eine neue URL
+    cb = int(time.time()) 
+    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cachebust={cb}"
     try:
-        df = pd.read_csv(url, dtype={0: str})
-        return df[df.iloc[:, 0].notna()]
-    except: return None
+        # Wir laden alles als String, um Konvertierungsfehler zu vermeiden
+        df = pd.read_csv(url, dtype=str)
+        # Entferne komplett leere Zeilen
+        df = df[df.iloc[:, 0].notna()]
+        return df
+    except Exception as e:
+        st.error(f"Fehler beim Laden: {e}")
+        return None
 
 df = load_data()
 
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    namen = df.iloc[:, 0].unique().tolist()
+    # Namen säubern (Leerzeichen entfernen)
+    namen = sorted([str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""])
     n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
     
     if n_sel != "Wählen...":
-        st.markdown(f"### 📋 Deine Deck-Übersicht ({n_sel})")
-        st.info("🎤 Bearbeite alle Decks (Sprache/Tippen) und klicke dann auf den großen Speicher-Button.")
+        # Den exakten Spieler finden
+        sz = df[df.iloc[:, 0].str.strip() == n_sel].copy()
         
-        sz = df[df.iloc[:, 0] == n_sel]
-        alle_inputs = {}
+        if sz.empty:
+            st.warning("Spieler nicht gefunden. Namen im Sheet prüfen!")
+        else:
+            st.markdown(f"### 📋 Deine Deck-Übersicht ({n_sel})")
+            
+            # WICHTIG: Button zum manuellen Aktualisieren
+            if st.button("🔄 DATEN FRISCH LADEN"):
+                st.rerun()
 
-        # Zentrale Speicher-Funktion
-        def save_all():
-            erfolg = 0
-            with st.spinner("Übertrage alle Daten an das HQ..."):
-                for d_nr, werte_str in alle_inputs.items():
+            st.info("🎤 Bearbeite deine Decks und klicke dann auf Speichern.")
+            
+            alle_inputs = {}
+
+            # Zentrale Speicher-Funktion
+            def save_all():
+                erfolg = 0
+                prozent_balken = st.progress(0)
+                decks_to_save = list(alle_inputs.items())
+                
+                for i, (d_nr, werte_str) in enumerate(decks_to_save):
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
-                    try:
-                        requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=8)
-                        erfolg += 1
-                    except:
-                        pass
-            if erfolg > 0:
+                    
+                    # Nur senden, wenn sich der Wert geändert hat (spart Zeit & Fehler)
+                    sc_idx = 1 + ((d_nr - 1) * 9)
+                    old_str = "".join([str(safe_int(sz.iloc[0, sc_idx + k])) for k in range(9)])
+                    
+                    if clean != old_str:
+                        try:
+                            # Erhöhter Timeout für stabilere Verbindung
+                            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
+                            erfolg += 1
+                        except:
+                            pass
+                    
+                    prozent_balken.progress((i + 1) / len(decks_to_save))
+
                 st.balloons()
-                st.success(f"Mission erfüllt! {erfolg} Decks wurden im Sheet aktualisiert.")
+                st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
                 time.sleep(2)
                 st.rerun()
 
-        # Oberer Button für schnellen Zugriff
-        if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_top"):
-            save_all()
+            if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_top"):
+                save_all()
 
-        st.markdown("---")
-        
-        for d in range(1, 16):
-            sc = 1 + ((d - 1) * 9)
-            current_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
-            besitz = sum(1 for v in current_vals if v > 0)
-            fehlen = 9 - besitz
-            current_str = "".join([str(v) for v in current_vals])
-            kugeln = DECK_WERTE.get(d, 0)
+            st.markdown("---")
             
-            c1, c2 = st.columns([3, 4])
-            with c1:
-                st.markdown(f"**DECK {d}**")
-                st.caption(f"Status: {besitz}/9 (noch {fehlen} fehlen) | 💰 {kugeln} Kugeln")
-            with c2:
-                alle_inputs[d] = st.text_input(
-                    f"Eingabe D{d}", value=current_str, key=f"in_d{d}", label_visibility="collapsed"
-                )
+            for d in range(1, 16):
+                sc = 1 + ((d - 1) * 9)
+                # Sicherheit: Prüfen ob Spalten existieren
+                if sc + 8 < len(sz.columns):
+                    current_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
+                    besitz = sum(1 for v in current_vals if v > 0)
+                    fehlen = 9 - besitz
+                    current_str = "".join([str(v) for v in current_vals])
+                    kugeln = DECK_WERTE.get(d, 0)
+                    
+                    c1, c2 = st.columns([3, 4])
+                    with c1:
+                        st.markdown(f"**DECK {d}**")
+                        st.caption(f"Status: {besitz}/9 (noch {fehlen} fehlen) | 💰 {kugeln} Kugeln")
+                    with c2:
+                        alle_inputs[d] = st.text_input(
+                            f"Zahlen D{d}", value=current_str, key=f"in_d{d}_{n_sel}", label_visibility="collapsed"
+                        )
 
-        st.markdown("---")
-        # Unterer Button (falls man ganz nach unten gescrollt hat)
-        if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
-            save_all()
+            st.markdown("---")
+            if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
+                save_all()
 
     # --- ADMIN BEREICH ---
     st.markdown("---")
-    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
+    pwd = st.text_input("Admin-Passwort", type="password")
     if pwd == ADMIN_PASSWORT:
         st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE")
+        # (Tauschlogik bleibt identisch...)
         gbt, bdr = [], []
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9) 
-                cols_deck = df.columns[sc:sc+9]
-                dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
-                besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
-                deck_wert = DECK_WERTE.get(d, 0)
-                f_bonus = 1000000 if besitz >= 8 else (besitz * 1000)
-                score = f_bonus + deck_wert + (dia_dichte * 10)
-                for i in range(9):
-                    cn = df.columns[sc+i]
-                    val = safe_int(row.iloc[sc+i])
-                    if val >= 2: gbt.append({"s": sp, "k": cn})
-                    elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, "wert": deck_wert, "deck_nr": d, "score": score})
+                if sc+8 < len(df.columns):
+                    cols_deck = df.columns[sc:sc+9]
+                    dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
+                    besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                    deck_wert = DECK_WERTE.get(d, 0)
+                    f_bonus = 1000000 if besitz >= 8 else (besitz * 1000)
+                    score = f_bonus + deck_wert + (dia_dichte * 10)
+                    for i in range(9):
+                        cn = df.columns[sc+i]
+                        val = safe_int(row.iloc[sc+i])
+                        if val >= 2: gbt.append({"s": sp, "k": cn})
+                        elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, "wert": deck_wert, "deck_nr": d, "score": score})
 
         def process_trades(filter_dia):
             weg_geber = set()
@@ -129,13 +160,13 @@ if df is not None:
                     weg_geber.add(best_g['s'])
             return results
 
-        t_gold, t_dia = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
-        for tab, is_dia in zip([t_gold, t_dia], [False, True]):
+        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
+        for tab, is_dia in zip([t1, t2], [False, True]):
             with tab:
                 trades = process_trades(is_dia)
                 if not trades: st.write("Keine Täusche verfügbar.")
                 else:
                     for g, b in trades:
-                        k_belohnung = DECK_WERTE.get(b['deck_nr'], 0)
-                        if b['f'] >= 8: st.success(f"🌟 **FINISHER ({k_belohnung} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
-                        else: st.info(f"🤝 **TAUSCH ({k_belohnung} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
+                        k_bel = DECK_WERTE.get(b['deck_nr'], 0)
+                        if b['f'] >= 8: st.success(f"🌟 **FINISHER ({k_bel}):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
+                        else: st.info(f"🤝 **TAUSCH ({k_bel}):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
