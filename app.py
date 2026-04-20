@@ -80,15 +80,47 @@ if df is not None:
                     with st.spinner("Wird übertragen..."):
                         try:
                             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d, "werte": w_str}, timeout=5)
-                            st.balloons() # <--- Da sind sie wieder! 🎈
+                            st.balloons()
                             st.success(f"Deck {d} aktualisiert!")
-                            time.sleep(1) # Etwas mehr Zeit für die Ballons
+                            time.sleep(1)
                             st.rerun()
                         except:
                             st.warning("Verbindung hakt – kurz warten.")
                             time.sleep(1)
                             st.rerun()
 
-    # --- ADMIN BEREICH ---
+    # --- ADMIN BEREICH (FEHLER BEHOBEN) ---
     st.markdown("---")
-    pwd =
+    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
+    
+    if pwd == ADMIN_PASSWORT:
+        st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE")
+        
+        gbt, bdr = [], []
+        for _, row in df.iterrows():
+            sp = str(row.iloc[0]).strip()
+            for d in range(1, 16):
+                sc = 1 + ((d - 1) * 9) 
+                cols_deck = df.columns[sc:sc+9]
+                dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
+                besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                deck_wert = DECK_WERTE.get(d, 0)
+                
+                f_bonus = 1000000 if besitz >= 8 else (besitz * 1000)
+                score = f_bonus + deck_wert + (dia_dichte * 10)
+
+                for i in range(9):
+                    cn = df.columns[sc+i]
+                    val = safe_int(row.iloc[sc+i])
+                    if val >= 2: 
+                        gbt.append({"s": sp, "k": cn})
+                    elif val == 0: 
+                        bdr.append({
+                            "s": sp, "k": cn, "f": besitz, 
+                            "dichte": dia_dichte, "wert": deck_wert, 
+                            "deck_nr": d, "score": score
+                        })
+
+        def process_trades(filter_dia):
+            weg_geber = set()
+            akt
