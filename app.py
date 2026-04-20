@@ -40,7 +40,6 @@ df = load_data()
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # REIHENFOLGE WIE IM SHEET (Sorted entfernt)
     namen = [str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""]
     n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
     
@@ -55,7 +54,7 @@ if df is not None:
             if st.button("🔄 DATEN FRISCH LADEN"):
                 st.rerun()
 
-            st.info("🎤 Bearbeite deine Decks und klicke dann auf Speichern.")
+            st.info("🎤 Gib die 9 Zahlen ein. Die Anzeige unter dem Feld hilft dir beim Zählen!")
             
             alle_inputs = {}
 
@@ -104,58 +103,3 @@ if df is not None:
                         st.markdown(f"**DECK {d}**")
                         st.caption(f"Status: {besitz}/9 (noch {fehlen} fehlen) | 💰 {kugeln} Kugeln")
                     with c2:
-                        alle_inputs[d] = st.text_input(
-                            f"Zahlen D{d}", value=current_str, key=f"in_d{d}_{n_sel}", label_visibility="collapsed"
-                        )
-
-            st.markdown("---")
-            if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
-                save_all()
-
-    # --- ADMIN BEREICH ---
-    st.markdown("---")
-    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
-    if pwd == ADMIN_PASSWORT:
-        st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE")
-        gbt, bdr = [], []
-        for _, row in df.iterrows():
-            sp = str(row.iloc[0]).strip()
-            for d in range(1, 16):
-                sc = 1 + ((d - 1) * 9) 
-                if sc+8 < len(df.columns):
-                    cols_deck = df.columns[sc:sc+9]
-                    dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
-                    besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
-                    deck_wert = DECK_WERTE.get(d, 0)
-                    f_bonus = 1000000 if besitz >= 8 else (besitz * 1000)
-                    score = f_bonus + deck_wert + (dia_dichte * 10)
-                    for i in range(9):
-                        cn = df.columns[sc+i]
-                        val = safe_int(row.iloc[sc+i])
-                        if val >= 2: gbt.append({"s": sp, "k": cn})
-                        elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, "wert": deck_wert, "deck_nr": d, "score": score})
-
-        def process_trades(filter_dia):
-            weg_geber = set()
-            akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
-            akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
-            results = []
-            for b in akt_bdr:
-                mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
-                if mögliche_geber:
-                    mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
-                    best_g = mögliche_geber[0]
-                    results.append((best_g, b))
-                    weg_geber.add(best_g['s'])
-            return results
-
-        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
-        for tab, is_dia in zip([t1, t2], [False, True]):
-            with tab:
-                trades = process_trades(is_dia)
-                if not trades: st.write("Keine Täusche verfügbar.")
-                else:
-                    for g, b in trades:
-                        k_bel = DECK_WERTE.get(b['deck_nr'], 0)
-                        if b['f'] >= 8: st.success(f"🌟 **FINISHER ({k_bel}):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
-                        else: st.info(f"🤝 **TAUSCH ({k_bel}):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
