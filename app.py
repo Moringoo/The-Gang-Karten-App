@@ -37,34 +37,49 @@ df = load_data()
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # --- SPIELER-BEREICH ---
+    # --- SPIELER-BEREICH (Listen-Layout für schnelle Eingabe) ---
     namen = df.iloc[:, 0].unique().tolist()
-    c1, c2 = st.columns(2)
-    n_sel = c1.selectbox("Wer bist du?", ["Wählen..."] + namen)
-    d_sel = c2.selectbox("Welches Deck?", list(range(1, 16)))
+    n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
     
     if n_sel != "Wählen...":
-        sz = df[df.iloc[:, 0] == n_sel]
-        sc = 1 + ((d_sel - 1) * 9)
-        db_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
-        st.subheader(f"🃏 Deck {d_sel} ({sum(1 for v in db_vals if v > 0)}/9)")
-        neue_werte = []
-        cols = st.columns(3) + st.columns(3) + st.columns(3)
-        for i in range(9):
-            with cols[i]:
-                v = st.number_input(f"K{i+1}", 0, 9, value=db_vals[i], key=f"k_{n_sel}_{d_sel}_{i}")
-                neue_werte.append(v)
+        st.markdown(f"### 📋 Deine Decks ({n_sel})")
+        st.info("Tippe die 9 Zahlen deines Decks einfach hintereinander ein (z.B. 002100001).")
         
-        if st.button("🚀 SPEICHERN", use_container_width=True):
-            w_str = ",".join([str(int(x)) for x in neue_werte])
-            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_sel, "werte": w_str})
-            st.balloons()
-            time.sleep(1)
-            st.rerun()
+        sz = df[df.iloc[:, 0] == n_sel]
+        
+        for d in range(1, 16):
+            sc = 1 + ((d - 1) * 9)
+            current_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
+            besitz = sum(1 for v in current_vals if v > 0)
+            current_str = "".join([str(v) for v in current_vals])
+            
+            c1, c2, c3 = st.columns([2, 3, 2])
+            with c1:
+                st.markdown(f"**Deck {d}** ({besitz}/9)")
+                st.caption(f"{DECK_WERTE.get(d)} Kugeln")
+            with c2:
+                user_input = st.text_input(
+                    f"Eingabe D{d}", value=current_str, key=f"in_{n_sel}_{d}", 
+                    label_visibility="collapsed", max_chars=9
+                )
+            with c3:
+                if st.button(f"💾 Speichern D{d}", key=f"btn_{n_sel}_{d}"):
+                    clean_input = "".join([c for c in user_input if c.isdigit()])
+                    clean_input = clean_input.ljust(9, '0')[:9]
+                    w_str = ",".join(list(clean_input))
+                    with st.spinner("Übertrage..."):
+                        try:
+                            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d, "werte": w_str}, timeout=15)
+                            st.success(f"Deck {d} aktualisiert!")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except:
+                            st.error("Fehler beim Speichern!")
 
-    # --- ADMIN BEREICH ---
+    # --- ADMIN BEREICH (Optimierte Logik) ---
     st.markdown("---")
-    if st.text_input("Admin-Passwort", type="password") == ADMIN_PASSWORT:
+    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
+    if pwd == ADMIN_PASSWORT:
         st.markdown("### 🎯 PROFIT-OPTIMIERTE TAUSCHVORSCHLÄGE")
         
         gbt, bdr = [], []
@@ -77,10 +92,6 @@ if df is not None:
                 besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                 deck_wert = DECK_WERTE.get(d, 0)
                 
-                # SCORE BERECHNUNG:
-                # Priorität 1: Finisher (8/9) -> 1.000.000 Punkte
-                # Priorität 2: Deck-Wert (Munition)
-                # Priorität 3: Diamanten-Dichte
                 score = (1000000 if besitz >= 8 else (besitz * 1000)) + deck_wert + (dia_dichte * 10)
 
                 for i in range(9):
@@ -94,29 +105,27 @@ if df is not None:
         def process_trades(filter_dia):
             weg_geber = set()
             akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
-            
-            # SORTIERUNG nach dem mathematischen Score
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
-            
             results = []
             for b in akt_bdr:
                 mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
                 if mögliche_geber:
-                    # Spezialisten-Check (Wer hat am wenigsten Karten zum Geben?)
                     mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
                     best_g = mögliche_geber[0]
                     results.append((best_g, b))
                     weg_geber.add(best_g['s'])
             return results
 
-        t_gold, t_dia = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
+        t_gold, t_dia = st.tabs(["🌕 GOLD KARTEN", "💎 DIAMANT KARTEN"])
         for tab, is_dia in zip([t_gold, t_dia], [False, True]):
             with tab:
                 trades = process_trades(is_dia)
-                if not trades: st.write("Keine Täusche möglich.")
-                for g, b in trades:
-                    kugeln = DECK_WERTE.get(b['deck_nr'], 0)
-                    if b['f'] >= 8:
-                        st.success(f"🌟 **FINISHER ({kugeln} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (Deck {b['deck_nr']})")
-                    else:
-                        st.info(f"🤝 **TAUSCH ({kugeln} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (Deck {b['deck_nr']})")
+                if not trades:
+                    st.write("Keine Täusche möglich.")
+                else:
+                    for g, b in trades:
+                        kugeln = DECK_WERTE.get(b['deck_nr'], 0)
+                        if b['f'] >= 8:
+                            st.success(f"🌟 **FINISHER ({kugeln} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (Deck {b['deck_nr']})")
+                        else:
+                            st.info(f"🤝 **TAUSCH ({kugeln} Kugeln):** {g['k']} von {g['s']} ➔ {b['s']} (Deck {b['deck_nr']})")
