@@ -24,15 +24,11 @@ def safe_int(val):
         return int(float(str(val).replace(',', '.')))
     except: return 0
 
-# VERBESSERTE LADE-FUNKTION (Erzwingt frische Daten)
 def load_data():
-    # Extrem-Cache-Buster: Jede Sekunde eine neue URL
     cb = int(time.time()) 
     url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cachebust={cb}"
     try:
-        # Wir laden alles als String, um Konvertierungsfehler zu vermeiden
         df = pd.read_csv(url, dtype=str)
-        # Entferne komplett leere Zeilen
         df = df[df.iloc[:, 0].notna()]
         return df
     except Exception as e:
@@ -44,20 +40,18 @@ df = load_data()
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # Namen säubern (Leerzeichen entfernen)
-    namen = sorted([str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""])
+    # REIHENFOLGE WIE IM SHEET (Sorted entfernt)
+    namen = [str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""]
     n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
     
     if n_sel != "Wählen...":
-        # Den exakten Spieler finden
         sz = df[df.iloc[:, 0].str.strip() == n_sel].copy()
         
         if sz.empty:
-            st.warning("Spieler nicht gefunden. Namen im Sheet prüfen!")
+            st.warning("Spieler nicht gefunden.")
         else:
             st.markdown(f"### 📋 Deine Deck-Übersicht ({n_sel})")
             
-            # WICHTIG: Button zum manuellen Aktualisieren
             if st.button("🔄 DATEN FRISCH LADEN"):
                 st.rerun()
 
@@ -65,7 +59,6 @@ if df is not None:
             
             alle_inputs = {}
 
-            # Zentrale Speicher-Funktion
             def save_all():
                 erfolg = 0
                 prozent_balken = st.progress(0)
@@ -75,13 +68,11 @@ if df is not None:
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
                     
-                    # Nur senden, wenn sich der Wert geändert hat (spart Zeit & Fehler)
                     sc_idx = 1 + ((d_nr - 1) * 9)
                     old_str = "".join([str(safe_int(sz.iloc[0, sc_idx + k])) for k in range(9)])
                     
                     if clean != old_str:
                         try:
-                            # Erhöhter Timeout für stabilere Verbindung
                             requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
                             erfolg += 1
                         except:
@@ -101,7 +92,6 @@ if df is not None:
             
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9)
-                # Sicherheit: Prüfen ob Spalten existieren
                 if sc + 8 < len(sz.columns):
                     current_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
                     besitz = sum(1 for v in current_vals if v > 0)
@@ -124,10 +114,9 @@ if df is not None:
 
     # --- ADMIN BEREICH ---
     st.markdown("---")
-    pwd = st.text_input("Admin-Passwort", type="password")
+    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
         st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE")
-        # (Tauschlogik bleibt identisch...)
         gbt, bdr = [], []
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
