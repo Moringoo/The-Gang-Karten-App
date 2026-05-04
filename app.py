@@ -121,11 +121,11 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH ---
+    # --- ADMIN BEREICH MIT NEUER LOGIK ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
-        st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE")
+        st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE (Fortschritt vor Kugeln)")
         gbt, bdr = [], []
         for _, row in df.iterrows():
             sp = str(row.iloc[0]).strip()
@@ -136,17 +136,32 @@ if df is not None:
                     dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
                     besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                     deck_wert = DECK_WERTE.get(d, 0)
-                    f_bonus = 1000000 if besitz >= 8 else (besitz * 1000)
+                    
+                    # --- NEUE GEWICHTUNG ---
+                    # 8/9 Deck = 10.000.000 Punkte
+                    # 7/9 Deck = 1.000.000 Punkte
+                    # 6/9 Deck = 100.000 Punkte
+                    # Der reine Kugelwert (max 10.000) kann diese Grenzen nun nicht mehr sprengen.
+                    if besitz == 8: f_bonus = 10000000
+                    elif besitz == 7: f_bonus = 1000000
+                    elif besitz == 6: f_bonus = 100000
+                    else: f_bonus = besitz * 1000 
+                    
                     score = f_bonus + deck_wert + (dia_dichte * 10)
+                    
                     for i in range(9):
                         cn = df.columns[sc+i]
                         val = safe_int(row.iloc[sc+i])
                         if val >= 2: gbt.append({"s": sp, "k": cn})
-                        elif val == 0: bdr.append({"s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, "wert": deck_wert, "deck_nr": d, "score": score})
+                        elif val == 0: bdr.append({
+                            "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
+                            "wert": deck_wert, "deck_nr": d, "score": score
+                        })
 
         def process_trades(filter_dia):
             weg_geber = set()
             akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
+            # Nach dem neuen Score sortieren
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
             for b in akt_bdr:
@@ -166,5 +181,11 @@ if df is not None:
                 else:
                     for g, b in trades:
                         k_bel = DECK_WERTE.get(b['deck_nr'], 0)
-                        if b['f'] >= 8: st.success(f"🌟 **FINISHER ({k_bel}):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
-                        else: st.info(f"🤝 **TAUSCH ({k_bel}):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']})")
+                        if b['f'] >= 8: 
+                            st.success(f"🔥 **PRIO 1 (8/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
+                        elif b['f'] == 7:
+                            st.info(f"⭐ **PRIO 2 (7/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
+                        elif b['f'] == 6:
+                            st.warning(f"📈 **PRIO 3 (6/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
+                        else:
+                            st.write(f"🤝 **Tausch:** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
