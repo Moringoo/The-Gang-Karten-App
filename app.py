@@ -47,8 +47,8 @@ if selected_player:
     if "input_storage" not in st.session_state:
         st.session_state.input_storage = {}
         
-    # Jedes Deck bekommt ein einziges kompaktes Textfeld
-    for i in range(1, 10):
+    # Schleife jetzt erweitert auf 15 Decks
+    for i in range(1, 16):
         deck_key = f"Deck {i}"
         current_val_str = str(player_row.get(deck_key, "0,0,0,0,0,0,0,0,0"))
         
@@ -79,12 +79,12 @@ if selected_player:
         st.caption(f"Aktuell im Sheet: {','.join(current_digits)}")
         st.markdown("---")
 
-    # --- SPEICHER-BUTTON (IMMER SICHTBAR) ---
+    # --- SPEICHER-BUTTON (FÜR ALLE 15 DECKS) ---
     if st.button("🚀 AKTUALISIEREN / ÄNDERUNGEN SPEICHERN", type="primary", use_container_width=True):
         with st.spinner("Übertrage Daten an Google Sheets..."):
             success_count = 0
             
-            for i in range(1, 10):
+            for i in range(1, 16):
                 deck_key = f"Deck {i}"
                 current_digits = [c for c in str(player_row.get(deck_key, "0,0,0,0,0,0,0,0,0")) if c.isdigit()]
                 while len(current_digits) < 9:
@@ -127,7 +127,7 @@ if passwort == "gang2026":
             if p_name == "Vorlage" or pd.isna(p_name):
                 continue
                 
-            for i in range(1, 10):
+            for i in range(1, 16):
                 raw_val = str(row.get(f"Deck {i}", "0,0,0,0,0,0,0,0,0"))
                 deck_digits = [c for c in raw_val if c.isdigit()]
                 while len(deck_digits) < 9:
@@ -181,4 +181,5 @@ if passwort == "gang2026":
                 hide_index=True
             )
 elif passwort != "":
+    st.error("❌ Falsches Passwort!")
     st.error("❌ Falsches Passwort!")
