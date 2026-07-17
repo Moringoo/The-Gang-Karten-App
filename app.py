@@ -49,7 +49,7 @@ if selected_player:
         
     changes_detected = False
     
-    # Jedes Deck bekommt eine eigene Zeile (keine 3 Spalten mehr)
+    # Jedes Deck bekommt eine eigene Zeile (kompakt nebeneinander)
     for i in range(1, 10):
         deck_key = f"Deck {i}"
         current_val_str = str(player_row.get(deck_key, "0,0,0,0,0,0,0,0,0"))
@@ -60,7 +60,6 @@ if selected_player:
             current_digits.append("0")
         current_digits = current_digits[:9]
         
-        # Große Zeile für das Deck: Links die Beschriftung, rechts die 9 Felder nebeneinander
         st.markdown(f"#### 📑 Deck {i}")
         new_digits = []
         
@@ -84,7 +83,6 @@ if selected_player:
                 st.session_state.input_storage[storage_key] = val
                 new_digits.append(str(val))
         
-        # Status-Anzeige direkt unter den 9 Feldern des jeweiligen Decks
         current_display = ",".join(current_digits)
         new_display = ",".join(new_digits)
         
@@ -94,7 +92,7 @@ if selected_player:
         else:
             st.caption(f"✅ Aktuell: {current_display}")
             
-        st.markdown("---") # Trennlinie zwischen den Decks
+        st.markdown("---")
 
     # --- SPEICHER-BUTTON ---
     if changes_detected:
@@ -152,4 +150,47 @@ if not df_data.empty and "Name" in df_data.columns:
             
             owned_cards = sum(1 for d in deck_digits if int(d) > 0)
             doubles = [k+1 for k, d in enumerate(deck_digits) if int(d) > 1]
-            missing =
+            missing = [k+1 for k, d in enumerate(deck_digits) if int(d) == 0]
+            
+            if owned_cards > 0:
+                analysis_data.append({
+                    "Spieler": p_name,
+                    "Deck": f"Deck {i}",
+                    "Fortschritt": f"{owned_cards}/9",
+                    "Sterne": owned_cards,
+                    "Doppelt (Gibt ab)": doubles,
+                    "Fehlt (Braucht)": missing
+                })
+                
+    df_analysis = pd.DataFrame(analysis_data)
+    
+    if not df_analysis.empty:
+        df_incomplete = df_analysis[df_analysis["Sterne"] < 9].copy()
+        df_incomplete["Priorität"] = df_incomplete["Sterne"].apply(lambda x: 1 if x == 8 else (2 if x == 7 else 3))
+        df_incomplete = df_incomplete.sort_values(by=["Priorität", "Sterne"], ascending=[True, False])
+        
+        st.markdown("### 🎯 Höchste Gang-Priorität (Decks kurz vor Fertigstellung!)")
+        
+        for _, target in df_incomplete.iterrows():
+            if target["Priorität"] <= 2:
+                st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['Deck']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
+                
+                potential_donors = []
+                for _, donor in df_analysis.iterrows():
+                    if donor["Deck"] == target["Deck"] and donor["Spieler"] != target["Spieler"]:
+                        matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
+                        if matches:
+                            potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
+                
+                if potential_donors:
+                    for d in potential_donors:
+                        st.markdown(d)
+                else:
+                    st.caption(" Keine passenden doppelten Karten aktuell in der Gang verfügbar.")
+        
+        st.markdown("### 📋 Alle offenen Baustellen der Gang")
+        st.dataframe(
+            df_incomplete[["Spieler", "Deck", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]],
+            use_container_width=True,
+            hide_index=True
+        )
