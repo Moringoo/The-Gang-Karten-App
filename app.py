@@ -1,191 +1,205 @@
 import streamlit as st
-import pandas as pd
 import requests
+import pandas as pd
 import time
-import random
 
-# --- 1. SETUP ---
-st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
+# --- KONFIGURATION ---
+# Deine Google Apps Script Web-App URL (wird automatisch aus den Secrets geladen)
+SCRIPT_URL = st.secrets.get("SCRIPT_URL", "https://script.google.com/macros/s/AKfycbzqvISwbnj74Ab7_NO5X3AeeHyvDeWFNFREiWd420_QBdlKyMWaNI6ZL9I0wyoLjEI/exec")
 
-# --- 2. KONFIGURATION & WERTE ---
-GID = "2025591169"
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqvISwbnj74Ab7_NO5X3AeeHyvDeWFNFREiWd420_QBdlKyMWaNI6ZL9I0wyoLjEI/exec" 
-ADMIN_PASSWORT = "gang2026" 
+st.set_page_config(page_title="The Gang - Karten-Manager", page_icon="💀", layout="wide")
+st.title("💀 The Gang - Karten-Manager")
 
-DECK_WERTE = {
-    1: 500, 2: 550, 3: 750, 4: 1000, 5: 1600, 
-    6: 2500, 7: 3000, 8: 4000, 9: 4500, 10: 6000, 
-    11: 6500, 12: 10000, 13: 1500, 14: 4000, 15: 6100
-}
-
-def safe_int(val):
+# --- DATA LOADING (Mit Cache-Busting gegen Google-Verzögerung) ---
+@st.cache_data(ttl=10)
+def load_data(cache_tick):
     try:
-        if pd.isna(val) or str(val).strip() == "" or str(val).lower() == "nan": return 0
-        return int(float(str(val).replace(',', '.')))
-    except: return 0
-
-def load_data():
-    cb = int(time.time()) 
-    url = f"https://docs.google.com/spreadsheets/d/1MMncv9mKwkRPs9j9QH7jM-onj3N1qJCL_BE2oMXZSQo/export?format=csv&gid={GID}&cachebust={cb}"
-    try:
-        df = pd.read_csv(url, dtype=str)
-        df = df[df.iloc[:, 0].notna()]
-        return df
+        response = requests.get(f"{SCRIPT_URL}?action=read&_cb={cache_tick}", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            df = pd.DataFrame(data)
+            return df
     except Exception as e:
-        st.error(f"Fehler beim Laden: {e}")
-        return None
+        st.error(f"Fehler beim Laden der Daten: {e}")
+    return pd.DataFrame()
 
-df = load_data()
+# Live-Counter für den URL-Wechsel
+if "cache_tick" not in st.session_state:
+    st.session_state.cache_tick = int(time.time())
 
-if df is not None:
-    st.title("💀 THE GANG HQ")
+df_data = load_data(st.session_state.cache_tick)
 
-    # Namen in der Original-Reihenfolge des Sheets
-    namen = [str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""]
-    n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
+if df_data.empty:
+    st.warning("⚠️ Keine Daten vom Google Sheet empfangen. Bitte überprüfe die SCRIPT_URL oder lade die Seite neu.")
+    if st.button("🔄 Verbindung erneut testen"):
+        st.session_state.cache_tick = int(time.time())
+        st.rerun()
+    st.stop()
+
+# --- SPIELER AUSWAHL ---
+all_players = sorted(df_data["Name"].unique()) if "Name" in df_data.columns else []
+selected_player = st.selectbox("👤 Wähle deinen Gang-Namen:", all_players)
+
+if selected_player:
+    player_row = df_data[df_data["Name"] == selected_player].iloc[0]
     
-    if n_sel != "Wählen...":
-        sz = df[df.iloc[:, 0].str.strip() == n_sel].copy()
+    st.subheader(f"🗃️ Kartendecks von {selected_player}")
+    st.info("Trage pro Karte ein: 0 = Fehlt, 1 = Vorhanden, 2+ = Doppelt (Tauschbar)")
+    
+    # Speicher für die neuen Werte im Session State
+    if "input_storage" not in st.session_state:
+        st.session_state.input_storage = {}
         
-        if sz.empty:
-            st.warning("Spieler nicht gefunden.")
-        else:
-            st.markdown(f"### 📋 Deine Deck-Übersicht ({n_sel})")
+    # Erstelle Eingabefelder für alle 9 Decks
+    cols = st.columns(3)
+    changes_detected = False
+    
+    for i in range(1, 10):
+        deck_key = f"Deck {i}"
+        current_val_str = str(player_row.get(deck_key, "000000000"))
+        # Sicherstellen, dass der String genau 9 Zeichen hat
+        current_val_str = current_val_str.ljust(9, '0')[:9]
+        
+        with cols[(i-1) % 3]:
+            st.markdown(f"### 📑 Deck {i}")
+            new_digits = []
             
-            if st.button("🔄 DATEN FRISCH LADEN"):
-                st.rerun()
-
-            st.info("🎤 Gib die 9 Zahlen ein. Der Counter hilft dir beim Zählen!")
-            
-            alle_inputs = {}
-
-            def save_all():
-                erfolg = 0
-                prozent_balken = st.progress(0)
-                decks_to_save = list(alle_inputs.items())
-                
-                for i, (d_nr, werte_str) in enumerate(decks_to_save):
-                    clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
-                    w_send = ",".join(list(clean))
+            # Zeige die 9 Karten nebeneinander als kompakte Eingabe
+            sub_cols = st.columns(9)
+            for k in range(9):
+                with sub_cols[k]:
+                    old_digit = current_val_str[k]
+                    storage_key = f"{selected_player}_{deck_key}_{k}"
                     
-                    sc_idx = 1 + ((d_nr - 1) * 9)
-                    old_str = "".join([str(safe_int(sz.iloc[0, sc_idx + k])) for k in range(9)])
-                    
-                    if clean != old_str:
-                        try:
-                            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
-                            erfolg += 1
-                        except:
-                            pass
-                    
-                    prozent_balken.progress((i + 1) / len(decks_to_save))
-
-                st.balloons()
-                st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
-                time.sleep(2)
-                st.rerun()
-
-            if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_top"):
-                save_all()
-
-            st.markdown("---")
-            
-            for d in range(1, 16):
-                sc = 1 + ((d - 1) * 9)
-                if sc + 8 < len(sz.columns):
-                    current_vals = [safe_int(sz.iloc[0, sc + i]) for i in range(9)]
-                    besitz = sum(1 for v in current_vals if v > 0)
-                    fehlen = 9 - besitz
-                    current_str = "".join([str(v) for v in current_vals])
-                    kugeln = DECK_WERTE.get(d, 0)
-                    
-                    c1, c2 = st.columns([3, 4])
-                    with c1:
-                        st.markdown(f"**DECK {d}**")
-                        st.caption(f"Status: {besitz}/9 (noch {fehlen} fehlen) | 💰 {kugeln} Kugeln")
-                    with c2:
-                        val = st.text_input(
-                            f"Zahlen D{d}", value=current_str, key=f"in_d{d}_{n_sel}", label_visibility="collapsed"
-                        )
-                        alle_inputs[d] = val
+                    # Initialisiere Speicher falls leer
+                    if storage_key not in st.session_state.input_storage:
+                        st.session_state.input_storage[storage_key] = int(old_digit) if old_digit.isdigit() else 0
                         
-                        count = len(val)
-                        if count == 9:
-                            st.markdown(f"<p style='color:green; font-size:12px; margin-top:-10px;'>✅ 9 Zeichen</p>", unsafe_allow_html=True)
-                        elif count < 9:
-                            st.markdown(f"<p style='color:orange; font-size:12px; margin-top:-10px;'>⚠️ {count}/9 Zeichen</p>", unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"<p style='color:red; font-size:12px; margin-top:-10px;'>❌ Zu viele! ({count}/9)</p>", unsafe_allow_html=True)
+                    val = st.number_input(
+                        f"K{k+1}", 
+                        min_value=0, 
+                        max_value=9, 
+                        value=st.session_state.input_storage[storage_key],
+                        key=f"input_{storage_key}",
+                        label_visibility="collapsed"
+                    )
+                    st.session_state.input_storage[storage_key] = val
+                    new_digits.append(str(val))
+            
+            new_val_str = "".join(new_digits)
+            if new_val_str != current_val_str:
+                changes_detected = True
+                st.caption(f"🔄 Geändert: {current_val_str} ➡️ **{new_val_str}**")
+            else:
+                st.caption(f"✅ Aktuell: {current_val_str}")
 
-            st.markdown("---")
-            if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
-                save_all()
-
-    # --- ADMIN BEREICH MIT NEUER LOGIK ---
+    # --- SPEICHER-BUTTON (Eiskalt an Google vorbei) ---
     st.markdown("---")
-    pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
-    if pwd == ADMIN_PASSWORT:
-        st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE (Fortschritt vor Kugeln)")
-        gbt, bdr = [], []
-        for _, row in df.iterrows():
-            sp = str(row.iloc[0]).strip()
-            for d in range(1, 16):
-                sc = 1 + ((d - 1) * 9) 
-                if sc+8 < len(df.columns):
-                    cols_deck = df.columns[sc:sc+9]
-                    dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
-                    besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
-                    deck_wert = DECK_WERTE.get(d, 0)
+    if changes_detected:
+        if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", type="primary", use_container_width=True):
+            with st.spinner("Übertrage Daten an Google Sheets..."):
+                success_count = 0
+                
+                # Gehe alle Decks durch und sende nur die geänderten
+                for i in range(1, 10):
+                    deck_key = f"Deck {i}"
+                    current_val_str = str(player_row.get(deck_key, "000000000")).ljust(9, '0')[:9]
                     
-                    # --- NEUE GEWICHTUNG ---
-                    # 8/9 Deck = 10.000.000 Punkte
-                    # 7/9 Deck = 1.000.000 Punkte
-                    # 6/9 Deck = 100.000 Punkte
-                    # Der reine Kugelwert (max 10.000) kann diese Grenzen nun nicht mehr sprengen.
-                    if besitz == 8: f_bonus = 10000000
-                    elif besitz == 7: f_bonus = 1000000
-                    elif besitz == 6: f_bonus = 100000
-                    else: f_bonus = besitz * 1000 
+                    # Generiere den neuen String aus dem Speicher
+                    new_digits = [str(st.session_state.input_storage[f"{selected_player}_{deck_key}_{k}"]) for k in range(9)]
+                    new_val_str = "".join(new_digits)
                     
-                    score = f_bonus + deck_wert + (dia_dichte * 10)
-                    
-                    for i in range(9):
-                        cn = df.columns[sc+i]
-                        val = safe_int(row.iloc[sc+i])
-                        if val >= 2: gbt.append({"s": sp, "k": cn})
-                        elif val == 0: bdr.append({
-                            "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
-                            "wert": deck_wert, "deck_nr": d, "score": score
-                        })
+                    if new_val_str != current_val_str:
+                        # Direkter Sende-Befehl an die Google-Schnittstelle
+                        api_url = f"{SCRIPT_URL}?name={selected_player}&deck={i}&werte={new_val_str}"
+                        try:
+                            res = requests.get(api_url, timeout=10)
+                            if res.status_code == 200:
+                                success_count += 1
+                        except Exception as e:
+                            st.error(f"Fehler bei Deck {i}: {e}")
+                
+                if success_count > 0:
+                    st.success(f"🔥 {success_count} Deck(s) erfolgreich im Google Sheet aktualisiert!")
+                    st.balloons()
+                    # Cache leeren und App neu laden
+                    st.cache_data.clear()
+                    st.session_state.cache_tick = int(time.time())
+                    # Lösche temporären Speicher, damit neue Daten geladen werden
+                    del st.session_state.input_storage
+                    time.sleep(1.5)
+                    st.rerun()
+    else:
+        st.button("✨ ALLES AUF DEM NEUESTEN STAND", disabled=True, use_container_width=True)
 
-        def process_trades(filter_dia):
-            weg_geber = set()
-            akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
-            # Nach dem neuen Score sortieren
-            akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
-            results = []
-            for b in akt_bdr:
-                mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
-                if mögliche_geber:
-                    mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
-                    best_g = mögliche_geber[0]
-                    results.append((best_g, b))
-                    weg_geber.add(best_g['s'])
-            return results
+# --- TAUSCH-ANALYSE (Das Herzstück für die Gang) ---
+st.markdown("---")
+st.header("📊 Strategische Tausch-Analyse (Wer braucht was?)")
 
-        t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
-        for tab, is_dia in zip([t1, t2], [False, True]):
-            with tab:
-                trades = process_trades(is_dia)
-                if not trades: st.write("Keine Täusche verfügbar.")
+if not df_data.empty and "Name" in df_data.columns:
+    # Berechne den Status aller Karten für alle Spieler
+    analysis_data = []
+    
+    for _, row in df_data.iterrows():
+        p_name = row["Name"]
+        if p_name == "Vorlage" or pd.isna(p_name):
+            continue
+            
+        for i in range(1, 10):
+            deck_val = str(row.get(f"Deck {i}", "000000000")).ljust(9, '0')[:9]
+            
+            # Zähle wie viele Karten vorhanden sind (Wert > 0)
+            owned_cards = sum(1 for char in deck_val if char.isdigit() and int(char) > 0)
+            
+            # Finde doppelte Karten (Wert > 1)
+            doubles = [k+1 for k, char in enumerate(deck_val) if char.isdigit() and int(char) > 1]
+            # Finde fehlende Karten (Wert == 0)
+            missing = [k+1 for k, char in enumerate(deck_val) if char == '0']
+            
+            if owned_cards > 0:
+                analysis_data.append({
+                    "Spieler": p_name,
+                    "Deck": f"Deck {i}",
+                    "Fortschritt": f"{owned_cards}/9",
+                    "Sterne": owned_cards,
+                    "Doppelt (Gibt ab)": doubles,
+                    "Fehlt (Braucht)": missing
+                })
+                
+    df_analysis = pd.DataFrame(analysis_data)
+    
+    if not df_analysis.empty:
+        # Sortierung nach Priorität (9/9 Decks ausblenden, Decks mit 8/9 oder 7/9 ganz nach oben)
+        df_incomplete = df_analysis[df_analysis["Sterne"] < 9].copy()
+        df_incomplete["Priorität"] = df_incomplete["Sterne"].apply(lambda x: 1 if x == 8 else (2 if x == 7 else 3))
+        df_incomplete = df_incomplete.sort_values(by=["Priorität", "Sterne"], ascending=[True, False])
+        
+        # Schöne Anzeige der Tausch-Möglichkeiten
+        st.markdown("### 🎯 Höchste Gang-Priorität (Decks kurz vor Fertigstellung!)")
+        
+        for _, target in df_incomplete.iterrows():
+            if target["Priorität"] <= 2: # Nur 8/9 und 7/9 Decks prominent anzeigen
+                st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['Deck']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
+                
+                # Finde passende Spender in der Gang
+                potential_donors = []
+                for _, donor in df_analysis.iterrows():
+                    if donor["Deck"] == target["Deck"] and donor["Spieler"] != target["Spieler"]:
+                        # Prüfe, ob der Geber eine Karte doppelt hat, die dem Empfänger fehlt
+                        matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
+                        if matches:
+                            potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
+                
+                if potential_donors:
+                    for d in potential_donors:
+                        st.markdown(d)
                 else:
-                    for g, b in trades:
-                        k_bel = DECK_WERTE.get(b['deck_nr'], 0)
-                        if b['f'] >= 8: 
-                            st.success(f"🔥 **PRIO 1 (8/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
-                        elif b['f'] == 7:
-                            st.info(f"⭐ **PRIO 2 (7/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
-                        elif b['f'] == 6:
-                            st.warning(f"📈 **PRIO 3 (6/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
-                        else:
-                            st.write(f"🤝 **Tausch:** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
+                    st.caption(" Keine passenden doppelten Karten aktuell in der Gang verfügbar.")
+        
+        # Komplette Übersichtstabelle für den Boss
+        st.markdown("### 📋 Alle offenen Baustellen der Gang")
+        st.dataframe(
+            df_incomplete[["Spieler", "Deck", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]],
+            use_container_width=True,
+            hide_index=True
+        )
