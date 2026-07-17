@@ -34,8 +34,8 @@ if df_data.empty:
         st.rerun()
     st.stop()
 
-# --- SPIELER AUSWAHL ---
-all_players = sorted(df_data["Name"].unique()) if "Name" in df_data.columns else []
+# --- SPIELER AUSWAHL (Jetzt wieder in originaler Reihenfolge von oben nach unten!) ---
+all_players = list(df_data["Name"].unique()) if "Name" in df_data.columns else []
 selected_player = st.selectbox("👤 Wähle deinen Gang-Namen:", all_players)
 
 if selected_player:
