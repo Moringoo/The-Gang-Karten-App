@@ -47,12 +47,12 @@ if selected_player:
     if "input_storage" not in st.session_state:
         st.session_state.input_storage = {}
         
-    # Jedes Deck bekommt sein gewohntes Textfeld
+    # Jedes Deck bekommt ein einziges kompaktes Textfeld
     for i in range(1, 10):
         deck_key = f"Deck {i}"
         current_val_str = str(player_row.get(deck_key, "0,0,0,0,0,0,0,0,0"))
         
-        # Säubere Datenformate zu 9 Ziffern
+        # Säubere alte Datenformate zu einer reinen Zahlenkette
         current_digits = [c for c in current_val_str if c.isdigit()]
         while len(current_digits) < 9:
             current_digits.append("0")
@@ -145,3 +145,40 @@ if passwort == "gang2026":
                         "Fortschritt": f"{owned_cards}/9",
                         "Sterne": owned_cards,
                         "Doppelt (Gibt ab)": doubles,
+                        "Fehlt (Braucht)": missing
+                    })
+                    
+        df_analysis = pd.DataFrame(analysis_data)
+        
+        if not df_analysis.empty:
+            df_incomplete = df_analysis[df_analysis["Sterne"] < 9].copy()
+            df_incomplete["Priorität"] = df_incomplete["Sterne"].apply(lambda x: 1 if x == 8 else (2 if x == 7 else 3))
+            df_incomplete = df_incomplete.sort_values(by=["Priorität", "Sterne"], ascending=[True, False])
+            
+            st.markdown("### 🎯 Höchste Gang-Priorität (Decks kurz vor Fertigstellung!)")
+            
+            for _, target in df_incomplete.iterrows():
+                if target["Priorität"] <= 2:
+                    st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['Deck']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
+                    
+                    potential_donors = []
+                    for _, donor in df_analysis.iterrows():
+                        if donor["Deck"] == target["Deck"] and donor["Spieler"] != target["Spieler"]:
+                            matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
+                            if matches:
+                                potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
+                    
+                    if potential_donors:
+                        for d in potential_donors:
+                            st.markdown(d)
+                    else:
+                        st.caption("Keine passenden doppelten Karten aktuell in der Gang verfügbar.")
+            
+            st.markdown("### 📋 Alle offenen Baustellen der Gang")
+            st.dataframe(
+                df_incomplete[["Spieler", "Deck", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]],
+                use_container_width=True,
+                hide_index=True
+            )
+elif passwort != "":
+    st.error("❌ Falsches Passwort!")
