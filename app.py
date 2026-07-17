@@ -34,7 +34,7 @@ if df_data.empty:
         st.rerun()
     st.stop()
 
-# --- SPIELER AUSWAHL (Jetzt wieder in originaler Reihenfolge von oben nach unten!) ---
+# --- SPIELER AUSWAHL ---
 all_players = list(df_data["Name"].unique()) if "Name" in df_data.columns else []
 selected_player = st.selectbox("👤 Wähle deinen Gang-Namen:", all_players)
 
@@ -47,9 +47,9 @@ if selected_player:
     if "input_storage" not in st.session_state:
         st.session_state.input_storage = {}
         
-    cols = st.columns(3)
     changes_detected = False
     
+    # Jedes Deck bekommt eine eigene Zeile (keine 3 Spalten mehr)
     for i in range(1, 10):
         deck_key = f"Deck {i}"
         current_val_str = str(player_row.get(deck_key, "0,0,0,0,0,0,0,0,0"))
@@ -60,42 +60,43 @@ if selected_player:
             current_digits.append("0")
         current_digits = current_digits[:9]
         
-        with cols[(i-1) % 3]:
-            st.markdown(f"### 📑 Deck {i}")
-            new_digits = []
-            
-            sub_cols = st.columns(9)
-            for k in range(9):
-                with sub_cols[k]:
-                    old_digit = current_digits[k]
-                    storage_key = f"{selected_player}_{deck_key}_{k}"
+        # Große Zeile für das Deck: Links die Beschriftung, rechts die 9 Felder nebeneinander
+        st.markdown(f"#### 📑 Deck {i}")
+        new_digits = []
+        
+        sub_cols = st.columns(9)
+        for k in range(9):
+            with sub_cols[k]:
+                old_digit = current_digits[k]
+                storage_key = f"{selected_player}_{deck_key}_{k}"
+                
+                if storage_key not in st.session_state.input_storage:
+                    st.session_state.input_storage[storage_key] = int(old_digit)
                     
-                    if storage_key not in st.session_state.input_storage:
-                        st.session_state.input_storage[storage_key] = int(old_digit)
-                        
-                    val = st.number_input(
-                        f"K{k+1}", 
-                        min_value=0, 
-                        max_value=9, 
-                        value=st.session_state.input_storage[storage_key],
-                        key=f"input_{storage_key}",
-                        label_visibility="collapsed"
-                    )
-                    st.session_state.input_storage[storage_key] = val
-                    new_digits.append(str(val))
+                val = st.number_input(
+                    f"D{i}K{k+1}", 
+                    min_value=0, 
+                    max_value=9, 
+                    value=st.session_state.input_storage[storage_key],
+                    key=f"input_{storage_key}",
+                    label_visibility="collapsed"
+                )
+                st.session_state.input_storage[storage_key] = val
+                new_digits.append(str(val))
+        
+        # Status-Anzeige direkt unter den 9 Feldern des jeweiligen Decks
+        current_display = ",".join(current_digits)
+        new_display = ",".join(new_digits)
+        
+        if new_display != current_display:
+            changes_detected = True
+            st.caption(f"🔄 Geändert: {current_display} ➡️ **{new_display}**")
+        else:
+            st.caption(f"✅ Aktuell: {current_display}")
             
-            # Zeige Vorschau mit Kommas passend fürs Sheet
-            current_display = ",".join(current_digits)
-            new_display = ",".join(new_digits)
-            
-            if new_display != current_display:
-                changes_detected = True
-                st.caption(f"🔄 Geändert: {current_display} ➡️ **{new_display}**")
-            else:
-                st.caption(f"✅ Aktuell: {current_display}")
+        st.markdown("---") # Trennlinie zwischen den Decks
 
     # --- SPEICHER-BUTTON ---
-    st.markdown("---")
     if changes_detected:
         if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", type="primary", use_container_width=True):
             with st.spinner("Übertrage Daten an Google Sheets..."):
@@ -111,7 +112,6 @@ if selected_player:
                     new_digits = [str(st.session_state.input_storage[f"{selected_player}_{deck_key}_{k}"]) for k in range(9)]
                     
                     if new_digits != current_digits:
-                        # Übergibt die Werte exakt mit Kommas getrennt an das Google Skript
                         param_werte = ",".join(new_digits)
                         api_url = f"{SCRIPT_URL}?name={selected_player}&deck={i}&werte={param_werte}"
                         try:
@@ -133,7 +133,6 @@ if selected_player:
         st.button("✨ ALLES AUF DEM NEUESTEN STAND", disabled=True, use_container_width=True)
 
 # --- TAUSCH-ANALYSE ---
-st.markdown("---")
 st.header("📊 Strategische Tausch-Analyse (Wer braucht was?)")
 
 if not df_data.empty and "Name" in df_data.columns:
@@ -153,47 +152,4 @@ if not df_data.empty and "Name" in df_data.columns:
             
             owned_cards = sum(1 for d in deck_digits if int(d) > 0)
             doubles = [k+1 for k, d in enumerate(deck_digits) if int(d) > 1]
-            missing = [k+1 for k, d in enumerate(deck_digits) if int(d) == 0]
-            
-            if owned_cards > 0:
-                analysis_data.append({
-                    "Spieler": p_name,
-                    "Deck": f"Deck {i}",
-                    "Fortschritt": f"{owned_cards}/9",
-                    "Sterne": owned_cards,
-                    "Doppelt (Gibt ab)": doubles,
-                    "Fehlt (Braucht)": missing
-                })
-                
-    df_analysis = pd.DataFrame(analysis_data)
-    
-    if not df_analysis.empty:
-        df_incomplete = df_analysis[df_analysis["Sterne"] < 9].copy()
-        df_incomplete["Priorität"] = df_incomplete["Sterne"].apply(lambda x: 1 if x == 8 else (2 if x == 7 else 3))
-        df_incomplete = df_incomplete.sort_values(by=["Priorität", "Sterne"], ascending=[True, False])
-        
-        st.markdown("### 🎯 Höchste Gang-Priorität (Decks kurz vor Fertigstellung!)")
-        
-        for _, target in df_incomplete.iterrows():
-            if target["Priorität"] <= 2:
-                st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['Deck']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
-                
-                potential_donors = []
-                for _, donor in df_analysis.iterrows():
-                    if donor["Deck"] == target["Deck"] and donor["Spieler"] != target["Spieler"]:
-                        matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
-                        if matches:
-                            potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
-                
-                if potential_donors:
-                    for d in potential_donors:
-                        st.markdown(d)
-                else:
-                    st.caption(" Keine passenden doppelten Karten aktuell in der Gang verfügbar.")
-        
-        st.markdown("### 📋 Alle offenen Baustellen der Gang")
-        st.dataframe(
-            df_incomplete[["Spieler", "Deck", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]],
-            use_container_width=True,
-            hide_index=True
-        )
+            missing =
