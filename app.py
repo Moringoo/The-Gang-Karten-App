@@ -42,155 +42,43 @@ if selected_player:
     player_row = df_data[df_data["Name"] == selected_player].iloc[0]
     
     st.subheader(f"🗃️ Kartendecks von {selected_player}")
-    st.info("Trage pro Karte ein: 0 = Fehlt, 1 = Vorhanden, 2+ = Doppelt (Tauschbar)")
+    st.info("Tippe einfach die 9 Zahlen hintereinander ein (z.B. 221000212). 0 = Fehlt, 1 = Vorhanden, 2+ = Doppelt")
     
     if "input_storage" not in st.session_state:
         st.session_state.input_storage = {}
         
     changes_detected = False
     
-    # Jedes Deck bekommt eine eigene Zeile (kompakt nebeneinander)
+    # Jedes Deck bekommt ein einziges kompaktes Textfeld
     for i in range(1, 10):
         deck_key = f"Deck {i}"
         current_val_str = str(player_row.get(deck_key, "0,0,0,0,0,0,0,0,0"))
         
-        # Säubere alte Datenformate zu einer reinen Zahlenliste
+        # Säubere alte Datenformate zu einer reinen Zahlenkette (9 Zeichen lang)
         current_digits = [c for c in current_val_str if c.isdigit()]
         while len(current_digits) < 9:
             current_digits.append("0")
         current_digits = current_digits[:9]
+        current_chain = "".join(current_digits) # Macht z.B. "221000212" daraus
         
-        st.markdown(f"#### 📑 Deck {i}")
-        new_digits = []
-        
-        sub_cols = st.columns(9)
-        for k in range(9):
-            with sub_cols[k]:
-                old_digit = current_digits[k]
-                storage_key = f"{selected_player}_{deck_key}_{k}"
-                
-                if storage_key not in st.session_state.input_storage:
-                    st.session_state.input_storage[storage_key] = int(old_digit)
-                    
-                val = st.number_input(
-                    f"D{i}K{k+1}", 
-                    min_value=0, 
-                    max_value=9, 
-                    value=st.session_state.input_storage[storage_key],
-                    key=f"input_{storage_key}",
-                    label_visibility="collapsed"
-                )
-                st.session_state.input_storage[storage_key] = val
-                new_digits.append(str(val))
-        
-        current_display = ",".join(current_digits)
-        new_display = ",".join(new_digits)
-        
-        if new_display != current_display:
-            changes_detected = True
-            st.caption(f"🔄 Geändert: {current_display} ➡️ **{new_display}**")
-        else:
-            st.caption(f"✅ Aktuell: {current_display}")
+        storage_key = f"{selected_player}_{deck_key}_chain"
+        if storage_key not in st.session_state.input_storage:
+            st.session_state.input_storage[storage_key] = current_chain
             
-        st.markdown("---")
-
-    # --- SPEICHER-BUTTON ---
-    if changes_detected:
-        if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", type="primary", use_container_width=True):
-            with st.spinner("Übertrage Daten an Google Sheets..."):
-                success_count = 0
-                
-                for i in range(1, 10):
-                    deck_key = f"Deck {i}"
-                    current_digits = [c for c in str(player_row.get(deck_key, "0,0,0,0,0,0,0,0,0")) if c.isdigit()]
-                    while len(current_digits) < 9:
-                        current_digits.append("0")
-                    current_digits = current_digits[:9]
-                    
-                    new_digits = [str(st.session_state.input_storage[f"{selected_player}_{deck_key}_{k}"]) for k in range(9)]
-                    
-                    if new_digits != current_digits:
-                        param_werte = ",".join(new_digits)
-                        api_url = f"{SCRIPT_URL}?name={selected_player}&deck={i}&werte={param_werte}"
-                        try:
-                            res = requests.get(api_url, timeout=10)
-                            if res.status_code == 200:
-                                success_count += 1
-                        except Exception as e:
-                            st.error(f"Fehler bei Deck {i}: {e}")
-                
-                if success_count > 0:
-                    st.success(f"🔥 {success_count} Deck(s) erfolgreich aktualisiert!")
-                    st.balloons()
-                    st.cache_data.clear()
-                    st.session_state.cache_tick = int(time.time())
-                    del st.session_state.input_storage
-                    time.sleep(1.5)
-                    st.rerun()
-    else:
-        st.button("✨ ALLES AUF DEM NEUESTEN STAND", disabled=True, use_container_width=True)
-
-# --- TAUSCH-ANALYSE ---
-st.header("📊 Strategische Tausch-Analyse (Wer braucht was?)")
-
-if not df_data.empty and "Name" in df_data.columns:
-    analysis_data = []
-    
-    for _, row in df_data.iterrows():
-        p_name = row["Name"]
-        if p_name == "Vorlage" or pd.isna(p_name):
-            continue
-            
-        for i in range(1, 10):
-            raw_val = str(row.get(f"Deck {i}", "0,0,0,0,0,0,0,0,0"))
-            deck_digits = [c for c in raw_val if c.isdigit()]
-            while len(deck_digits) < 9:
-                deck_digits.append("0")
-            deck_digits = deck_digits[:9]
-            
-            owned_cards = sum(1 for d in deck_digits if int(d) > 0)
-            doubles = [k+1 for k, d in enumerate(deck_digits) if int(d) > 1]
-            missing = [k+1 for k, d in enumerate(deck_digits) if int(d) == 0]
-            
-            if owned_cards > 0:
-                analysis_data.append({
-                    "Spieler": p_name,
-                    "Deck": f"Deck {i}",
-                    "Fortschritt": f"{owned_cards}/9",
-                    "Sterne": owned_cards,
-                    "Doppelt (Gibt ab)": doubles,
-                    "Fehlt (Braucht)": missing
-                })
-                
-    df_analysis = pd.DataFrame(analysis_data)
-    
-    if not df_analysis.empty:
-        df_incomplete = df_analysis[df_analysis["Sterne"] < 9].copy()
-        df_incomplete["Priorität"] = df_incomplete["Sterne"].apply(lambda x: 1 if x == 8 else (2 if x == 7 else 3))
-        df_incomplete = df_incomplete.sort_values(by=["Priorität", "Sterne"], ascending=[True, False])
-        
-        st.markdown("### 🎯 Höchste Gang-Priorität (Decks kurz vor Fertigstellung!)")
-        
-        for _, target in df_incomplete.iterrows():
-            if target["Priorität"] <= 2:
-                st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['Deck']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
-                
-                potential_donors = []
-                for _, donor in df_analysis.iterrows():
-                    if donor["Deck"] == target["Deck"] and donor["Spieler"] != target["Spieler"]:
-                        matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
-                        if matches:
-                            potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
-                
-                if potential_donors:
-                    for d in potential_donors:
-                        st.markdown(d)
-                else:
-                    st.caption(" Keine passenden doppelten Karten aktuell in der Gang verfügbar.")
-        
-        st.markdown("### 📋 Alle offenen Baustellen der Gang")
-        st.dataframe(
-            df_incomplete[["Spieler", "Deck", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]],
-            use_container_width=True,
-            hide_index=True
+        # Das einteilige Eingabefeld
+        val_input = st.text_input(
+            f"📑 Deck {i}",
+            value=st.session_state.input_storage[storage_key],
+            max_chars=9,
+            key=f"input_{storage_key}"
         )
+        
+        # Validierung: Falls die Eingabe fehlerhaft ist, füllen wir mit Nullen auf
+        clean_input_digits = [c for c in val_input if c.isdigit()]
+        while len(clean_input_digits) < 9:
+            clean_input_digits.append("0")
+        clean_input_chain = "".join(clean_input_digits[:9])
+        
+        st.session_state.input_storage[storage_key] = clean_input_chain
+        
+        # Vergleich, ob sich
