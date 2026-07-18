@@ -136,7 +136,7 @@ if passwort == "gang2026":
                 if owned_cards > 0:
                     analysis_data.append({
                         "Spieler": p_name,
-                        "DeckID": i,  # Nutzen wir jetzt für den direkten Match-Vergleich
+                        "DeckID": i,
                         "DeckLabel": f"Deck {i}",
                         "Fortschritt": f"{owned_cards}/9",
                         "Sterne": owned_cards,
@@ -153,20 +153,19 @@ if passwort == "gang2026":
                 
                 st.markdown("### 🎯 Höchste Gang-Priorität (Decks kurz vor Fertigstellung!)")
                 has_matches = False
+                
                 for _, target in df_incomplete.iterrows():
                     if target["Priorität"] <= 2:
-                        potential_donors = []
+                        # Holt potenzielle Spender für dieses spezifische Deck
                         for _, donor in df_analysis.iterrows():
-                            # Match-Kriterium korrigiert auf DeckID
                             if donor["DeckID"] == target["DeckID"] and donor["Spieler"] != target["Spieler"]:
+                                # Finde Schnittmenge aus doppelten Karten des Spenders und fehlenden Karten des Empfängers
                                 matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
-                                if matches:
-                                    potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
-                        if potential_donors:
-                            has_matches = True
-                            st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['DeckLabel']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
-                            for d in potential_donors:
-                                st.markdown(d)
+                                for card in matches:
+                                    has_matches = True
+                                    # Formatiert exakt im gewünschten Format: D1, K8 von Troy an Frankman
+                                    st.error(f"👉 **D{target['DeckID']}, K{card}** von **{donor['Spieler']}** an **{target['Spieler']}**")
+                
                 if not has_matches:
                     st.info("Aktuell keine direkten Tausch-Matches für Fast-Fertige Decks verfügbar.")
                 
