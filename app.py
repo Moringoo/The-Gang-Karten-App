@@ -50,7 +50,6 @@ if selected_player:
             st.session_state.input_storage = {}
             
         for i in range(1, 16):
-            # Holt die 9 Kartenwerte aus den Spalten D{i}-K1 bis D{i}-K9
             current_digits = []
             for k in range(1, 10):
                 col_key = f"D{i}-K{k}"
@@ -137,7 +136,8 @@ if passwort == "gang2026":
                 if owned_cards > 0:
                     analysis_data.append({
                         "Spieler": p_name,
-                        "Deck": f"Deck {i}",
+                        "DeckID": i,  # Nutzen wir jetzt für den direkten Match-Vergleich
+                        "DeckLabel": f"Deck {i}",
                         "Fortschritt": f"{owned_cards}/9",
                         "Sterne": owned_cards,
                         "Doppelt (Gibt ab)": doubles,
@@ -157,19 +157,24 @@ if passwort == "gang2026":
                     if target["Priorität"] <= 2:
                         potential_donors = []
                         for _, donor in df_analysis.iterrows():
-                            if donor["Deck"] == target["Deck"] and donor["Spieler"] != target["Spieler"]:
+                            # Match-Kriterium korrigiert auf DeckID
+                            if donor["DeckID"] == target["DeckID"] and donor["Spieler"] != target["Spieler"]:
                                 matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
                                 if matches:
                                     potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
                         if potential_donors:
                             has_matches = True
-                            st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['Deck']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
+                            st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['DeckLabel']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
                             for d in potential_donors:
                                 st.markdown(d)
                 if not has_matches:
                     st.info("Aktuell keine direkten Tausch-Matches für Fast-Fertige Decks verfügbar.")
                 
                 st.markdown("### 📋 Alle offenen Baustellen der Gang")
-                st.dataframe(df_incomplete[["Spieler", "Deck", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]], use_container_width=True, hide_index=True)
+                st.dataframe(df_incomplete[["Spieler", "DeckLabel", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]].rename(columns={"DeckLabel": "Deck"}), use_container_width=True, hide_index=True)
+            else:
+                st.info("Alle Decks aller Spieler sind bereits vollständig bei 9/9! 🏆")
+        else:
+            st.warning("Keine analysierbaren Daten gefunden.")
 elif passwort != "":
     st.error("❌ Falsches Passwort!")
