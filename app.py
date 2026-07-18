@@ -4,7 +4,6 @@ import pandas as pd
 import time
 
 # --- KONFIGURATION ---
-# Deine neue Bereitstellungs-URL ist jetzt hier fest hinterlegt:
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw71UB_1bRLELpRK1pzygSgV_uSxR4FHme1CRez4nC-80wGrwwORgYntwSyz0VofCs/exec"
 
 st.set_page_config(page_title="The Gang - Karten-Manager", page_icon="💀", layout="wide")
@@ -88,4 +87,89 @@ if selected_player:
                 for i in range(1, 16):
                     orig_digits = []
                     for k in range(1, 10):
-                        orig_digits.append(str(player_row.get(f"D{
+                        orig_digits.append(str(player_row.get(f"D{i}-K{k}", "0")))
+                    orig_chain = "".join([c if c.isdigit() else "0" for c in orig_digits])
+                    
+                    new_chain = st.session_state.input_storage[f"{selected_player}_Deck_{i}_chain"]
+                    
+                    if new_chain != orig_chain:
+                        param_werte = ",".join(list(new_chain))
+                        api_url = f"{SCRIPT_URL}?name={selected_player}&deck={i}&werte={param_werte}"
+                        try:
+                            res = requests.get(api_url, timeout=10)
+                            if res.status_code == 200:
+                                success_count += 1
+                        except Exception as e:
+                            st.error(f"Fehler bei Deck {i}: {e}")
+                
+                st.success("🔥 Datenabgleich mit Google Sheets abgeschlossen!")
+                st.balloons()
+                st.cache_data.clear()
+                st.session_state.cache_tick = int(time.time())
+                time.sleep(1.5)
+                st.rerun()
+    else:
+        st.error("⚠️ Name nicht gefunden.")
+
+# --- TAUSCHVORSCHLÄGE MIT PASSWORT SCHUTZ ---
+st.markdown("---")
+st.header("📊 Strategische Tausch-Analyse")
+passwort = st.text_input("🔑 Gib das Passwort ein, um Tauschvorschläge zu sehen:", type="password")
+
+if passwort == "gang2026":
+    st.success("🔓 Zugriff gewährt!")
+    if not df_data.empty:
+        analysis_data = []
+        for _, row in df_data.iterrows():
+            p_name = row.get("Name")
+            if pd.isna(p_name) or str(p_name).strip() in ["Vorlage", ""]:
+                continue
+            for i in range(1, 16):
+                deck_digits = []
+                for k in range(1, 10):
+                    val = str(row.get(f"D{i}-K{k}", "0"))
+                    deck_digits.append(int(val) if val.isdigit() else 0)
+                
+                owned_cards = sum(1 for d in deck_digits if d > 0)
+                doubles = [k+1 for k, d in enumerate(deck_digits) if d > 1]
+                missing = [k+1 for k, d in enumerate(deck_digits) if d == 0]
+                
+                if owned_cards > 0:
+                    analysis_data.append({
+                        "Spieler": p_name,
+                        "Deck": f"Deck {i}",
+                        "Fortschritt": f"{owned_cards}/9",
+                        "Sterne": owned_cards,
+                        "Doppelt (Gibt ab)": doubles,
+                        "Fehlt (Braucht)": missing
+                    })
+                    
+        if analysis_data:
+            df_analysis = pd.DataFrame(analysis_data)
+            df_incomplete = df_analysis[df_analysis["Sterne"] < 9].copy()
+            if not df_incomplete.empty:
+                df_incomplete["Priorität"] = df_incomplete["Sterne"].apply(lambda x: 1 if x == 8 else (2 if x == 7 else 3))
+                df_incomplete = df_incomplete.sort_values(by=["Priorität", "Sterne"], ascending=[True, False])
+                
+                st.markdown("### 🎯 Höchste Gang-Priorität (Decks kurz vor Fertigstellung!)")
+                has_matches = False
+                for _, target in df_incomplete.iterrows():
+                    if target["Priorität"] <= 2:
+                        potential_donors = []
+                        for _, donor in df_analysis.iterrows():
+                            if donor["Deck"] == target["Deck"] and donor["Spieler"] != target["Spieler"]:
+                                matches = list(set(donor["Doppelt (Gibt ab)"]).intersection(set(target["Fehlt (Braucht)"])))
+                                if matches:
+                                    potential_donors.append(f"-> **{donor['Spieler']}** kann Karte {matches} abgeben!")
+                        if potential_donors:
+                            has_matches = True
+                            st.error(f"🚨 **{target['Spieler']}** braucht dringend Hilfe bei **{target['Deck']}** ({target['Fortschritt']})! Fehlende Karten: {target['Fehlt (Braucht)']}")
+                            for d in potential_donors:
+                                st.markdown(d)
+                if not has_matches:
+                    st.info("Aktuell keine direkten Tausch-Matches für Fast-Fertige Decks verfügbar.")
+                
+                st.markdown("### 📋 Alle offenen Baustellen der Gang")
+                st.dataframe(df_incomplete[["Spieler", "Deck", "Fortschritt", "Doppelt (Gibt ab)", "Fehlt (Braucht)"]], use_container_width=True, hide_index=True)
+elif passwort != "":
+    st.error("❌ Falsches Passwort!")
