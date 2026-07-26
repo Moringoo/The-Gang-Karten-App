@@ -120,65 +120,94 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH ---
+    # --- ADMIN BEREICH MIT STRIKTER PRÜFUNG ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
         st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE (Fortschritt vor Kugeln)")
-        gbt, bdr = [], []
-        for _, row in df.iterrows():
-            sp = str(row.iloc[0]).strip()
-            if sp.lower() in ["vorlage", ""]:
-                continue
-            for d in range(1, 16):
-                sc = 1 + ((d - 1) * 9) 
-                if sc+8 < len(df.columns):
-                    cols_deck = df.columns[sc:sc+9]
-                    dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
-                    besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
-                    deck_wert = DECK_WERTE.get(d, 0)
-                    
-                    if besitz == 8: f_bonus = 10000000
-                    elif besitz == 7: f_bonus = 1000000
-                    elif besitz == 6: f_bonus = 100000
-                    else: f_bonus = besitz * 1000 
-                    
-                    score = f_bonus + deck_wert + (dia_dichte * 10)
-                    
-                    for i in range(9):
-                        cn = df.columns[sc+i]
-                        val = safe_int(row.iloc[sc+i])
-                        if val >= 2: gbt.append({"s": sp, "k": cn})
-                        elif val == 0: bdr.append({
-                            "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
-                            "wert": deck_wert, "deck_nr": d, "score": score
-                        })
-
+        
         def process_trades(filter_dia):
+            gbt, bdr = [], []
+            
+            for _, row in df.iterrows():
+                sp = str(row.iloc[0]).strip()
+                if sp.lower() in ["vorlage", ""]:
+                    continue
+                    
+                for d in range(1, 16):
+                    sc = 1 + ((d - 1) * 9) 
+                    if sc + 8 < len(df.columns):
+                        cols_deck = df.columns[sc:sc+9]
+                        dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
+                        besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                        deck_wert = DECK_WERTE.get(d, 0)
+                        
+                        if besitz == 8: f_bonus = 10000000
+                        elif besitz == 7: f_bonus = 1000000
+                        elif besitz == 6: f_bonus = 100000
+                        else: f_bonus = besitz * 1000 
+                        
+                        score = f_bonus + deck_wert + (dia_dichte * 10)
+                        
+                        for i in range(9):
+                            cn = df.columns[sc+i]
+                            is_dia_card = "(D)" in str(cn)
+                            
+                            # Filtert strikt nach Gold oder Diamant
+                            if is_dia_card != filter_dia:
+                                continue
+                                
+                            val = safe_int(row.iloc[sc+i])
+                            
+                            # STRIKT: Geber MUSS >= 2 Karten besitzen
+                            if val >= 2: 
+                                gbt.append({"s": sp, "k": cn, "pos": i + 1, "deck_nr": d, "col_idx": sc+i})
+                            # STRIKT: Empfänger MUSS genau 0 Karten besitzen
+                            elif val == 0: 
+                                bdr.append({
+                                    "s": sp, "k": cn, "pos": i + 1, "f": besitz, "dichte": dia_dichte, 
+                                    "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
+                                })
+
+            # Sortiere Bedürfnisse streng nach Priorität/Score
+            bdr = sorted(bdr, key=lambda x: x['score'], reverse=True)
+            
             weg_geber = set()
-            akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
-            akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
+            weg_empfaenger = set() # Verhindert doppelte Zuweisungen pro Kategorie
             results = []
-            for b in akt_bdr:
-                mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
+            
+            for b in bdr:
+                # Prüfe, ob Empfänger in dieser Kategorie schon eine Karte erhält
+                if b['s'] in weg_empfaenger:
+                    continue
+                    
+                # Geber suchen: Muss die selbe Spalte haben, noch nicht gesendet haben und nicht der Empfänger selbst sein
+                mögliche_geber = [
+                    g for g in gbt 
+                    if g['col_idx'] == b['col_idx'] and g['s'] not in weg_geber and g['s'] != b["s"]
+                ]
+                
                 if mögliche_geber:
-                    mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
+                    # Sortiere Geber: Bevorzuge Geber mit den meisten doppelten Karten insgesamt
+                    mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']), reverse=True)
                     best_g = mögliche_geber[0]
+                    
                     results.append((best_g, b))
                     weg_geber.add(best_g['s'])
+                    weg_empfaenger.add(b['s'])
+                    
             return results
 
         t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
         for tab, is_dia in zip([t1, t2], [False, True]):
             with tab:
                 trades = process_trades(is_dia)
-                if not trades: st.write("Keine Täusche verfügbar.")
+                if not trades: 
+                    st.write("Keine Täusche verfügbar.")
                 else:
                     for g, b in trades:
                         k_bel = DECK_WERTE.get(b['deck_nr'], 0)
-                        
-                        # Extrahiere Kartennummer kompakt aus Spaltenname (z.B. aus D1-K8 wird K8)
-                        k_short = b['k'].split('-')[-1] if '-' in b['k'] else b['k']
+                        k_short = f"K{b['pos']}"
                         
                         if b['f'] >= 8: 
                             st.success(f"🔥 **PRIO 1 (8/9):** D{b['deck_nr']}, {k_short} von {g['s']} ➔ {b['s']} ({k_bel} K.)")
