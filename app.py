@@ -120,7 +120,7 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH MIT STRIKTER PRÜFUNG ---
+    # --- ADMIN BEREICH (MEHRFACH-EMPFANG ZUM DECKS SCHLIESSEN ERMITTELN) ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
@@ -153,48 +153,40 @@ if df is not None:
                             cn = df.columns[sc+i]
                             is_dia_card = "(D)" in str(cn)
                             
-                            # Filtert strikt nach Gold oder Diamant
                             if is_dia_card != filter_dia:
                                 continue
                                 
                             val = safe_int(row.iloc[sc+i])
                             
-                            # STRIKT: Geber MUSS >= 2 Karten besitzen
+                            # STRIKT: Geber MUSS >= 2 besitzen (Karte doppelt)
                             if val >= 2: 
                                 gbt.append({"s": sp, "k": cn, "pos": i + 1, "deck_nr": d, "col_idx": sc+i})
-                            # STRIKT: Empfänger MUSS genau 0 Karten besitzen
+                            # STRIKT: Empfänger MUSS genau 0 besitzen (Karte fehlt absolut)
                             elif val == 0: 
                                 bdr.append({
                                     "s": sp, "k": cn, "pos": i + 1, "f": besitz, "dichte": dia_dichte, 
                                     "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
                                 })
 
-            # Sortiere Bedürfnisse streng nach Priorität/Score
+            # Sortiere Bedürfnisse streng nach Score/Priorität (8/9 Decks zuerst!)
             bdr = sorted(bdr, key=lambda x: x['score'], reverse=True)
             
-            weg_geber = set()
-            weg_empfaenger = set() # Verhindert doppelte Zuweisungen pro Kategorie
+            weg_geber = set() # NUR der SENDER wird gesperrt (1 Karte pro Geber am Tag)!
             results = []
             
             for b in bdr:
-                # Prüfe, ob Empfänger in dieser Kategorie schon eine Karte erhält
-                if b['s'] in weg_empfaenger:
-                    continue
-                    
-                # Geber suchen: Muss die selbe Spalte haben, noch nicht gesendet haben und nicht der Empfänger selbst sein
                 mögliche_geber = [
                     g for g in gbt 
                     if g['col_idx'] == b['col_idx'] and g['s'] not in weg_geber and g['s'] != b["s"]
                 ]
                 
                 if mögliche_geber:
-                    # Sortiere Geber: Bevorzuge Geber mit den meisten doppelten Karten insgesamt
+                    # Sortiert Geber nach der Anzahl ihrer doppelten Karten insgesamt
                     mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']), reverse=True)
                     best_g = mögliche_geber[0]
                     
                     results.append((best_g, b))
-                    weg_geber.add(best_g['s'])
-                    weg_empfaenger.add(b['s'])
+                    weg_geber.add(best_g['s']) # Dieser Geber hat seine 1 Karte für heute abgegeben!
                     
             return results
 
