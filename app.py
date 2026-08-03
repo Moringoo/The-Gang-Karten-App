@@ -120,74 +120,66 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH (MEHRFACH-EMPFANG ZUM DECKS SCHLIESSEN ERMITTELN) ---
+    # --- ADMIN BEREICH MIT NEUER LOGIK ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
         st.markdown("### 🎯 PRIORISIERTE TAUSCHLISTE (Fortschritt vor Kugeln)")
-        
-        def process_trades(filter_dia):
-            gbt, bdr = [], []
-            
-            for _, row in df.iterrows():
-                sp = str(row.iloc[0]).strip()
-                if sp.lower() in ["vorlage", ""]:
-                    continue
+        gbt, bdr = [], []
+        for _, row in df.iterrows():
+            sp = str(row.iloc[0]).strip()
+            if sp.lower() in ["vorlage", ""]:
+                continue
+            for d in range(1, 16):
+                sc = 1 + ((d - 1) * 9) 
+                if sc+8 < len(df.columns):
+                    cols_deck = df.columns[sc:sc+9]
                     
-                for d in range(1, 16):
-                    sc = 1 + ((d - 1) * 9) 
-                    if sc + 8 < len(df.columns):
-                        cols_deck = df.columns[sc:sc+9]
-                        dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
-                        besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
-                        deck_wert = DECK_WERTE.get(d, 0)
+                    # GOOGLE-SHEET FIX: Erkennt "(D)" und "(d)" absolut verlässlich
+                    dia_dichte = sum(1 for c in cols_deck if "(d)" in str(c).lower())
+                    besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
+                    deck_wert = DECK_WERTE.get(d, 0)
+                    
+                    # --- DEINE ORIGINAL GEWICHTUNG ---
+                    if besitz == 8: f_bonus = 10000000
+                    elif besitz == 7: f_bonus = 1000000
+                    elif besitz == 6: f_bonus = 100000
+                    else: f_bonus = besitz * 1000 
+                    
+                    score = f_bonus + deck_wert + (dia_dichte * 10)
+                    
+                    for i in range(9):
+                        cn = df.columns[sc+i]
+                        val = safe_int(row.iloc[sc+i])
                         
-                        if besitz == 8: f_bonus = 10000000
-                        elif besitz == 7: f_bonus = 1000000
-                        elif besitz == 6: f_bonus = 100000
-                        else: f_bonus = besitz * 1000 
-                        
-                        score = f_bonus + deck_wert + (dia_dichte * 10)
-                        
-                        for i in range(9):
-                            cn = df.columns[sc+i]
-                            is_dia_card = "(D)" in str(cn)
-                            
-                            if is_dia_card != filter_dia:
-                                continue
-                                
-                            val = safe_int(row.iloc[sc+i])
-                            
-                            # STRIKT: Geber MUSS >= 2 besitzen (Karte doppelt)
-                            if val >= 2: 
-                                gbt.append({"s": sp, "k": cn, "pos": i + 1, "deck_nr": d, "col_idx": sc+i})
-                            # STRIKT: Empfänger MUSS genau 0 besitzen (Karte fehlt absolut)
-                            elif val == 0: 
-                                bdr.append({
-                                    "s": sp, "k": cn, "pos": i + 1, "f": besitz, "dichte": dia_dichte, 
-                                    "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
-                                })
+                        # GOOGLE-SHEET FIX: Merkt sich die genaue Spalte (col_idx) für 100% Zuverlässigkeit
+                        if val >= 2: 
+                            gbt.append({"s": sp, "k": cn, "col_idx": sc+i})
+                        elif val == 0: 
+                            bdr.append({
+                                "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
+                                "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
+                            })
 
-            # Sortiere Bedürfnisse streng nach Score/Priorität (8/9 Decks zuerst!)
-            bdr = sorted(bdr, key=lambda x: x['score'], reverse=True)
+        def process_trades(filter_dia):
+            weg_geber = set()
             
-            weg_geber = set() # NUR der SENDER wird gesperrt (1 Karte pro Geber am Tag)!
+            # GOOGLE-SHEET FIX: Filtert Diamant-Karten sauber heraus (auch bei Deck 10)
+            akt_bdr = [b for b in bdr if ("(d)" in str(b["k"]).lower() or b["deck_nr"] == 10) == filter_dia]
+            akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
             
-            for b in bdr:
+            for b in akt_bdr:
+                # GOOGLE-SHEET FIX: Findet den Geber über die exakte Spalte im Sheet
                 mögliche_geber = [
                     g for g in gbt 
                     if g['col_idx'] == b['col_idx'] and g['s'] not in weg_geber and g['s'] != b["s"]
                 ]
-                
                 if mögliche_geber:
-                    # Sortiert Geber nach der Anzahl ihrer doppelten Karten insgesamt
-                    mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']), reverse=True)
+                    mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
                     best_g = mögliche_geber[0]
-                    
                     results.append((best_g, b))
-                    weg_geber.add(best_g['s']) # Dieser Geber hat seine 1 Karte für heute abgegeben!
-                    
+                    weg_geber.add(best_g['s'])
             return results
 
         t1, t2 = st.tabs(["🌕 GOLD", "💎 DIAMANT"])
@@ -199,13 +191,13 @@ if df is not None:
                 else:
                     for g, b in trades:
                         k_bel = DECK_WERTE.get(b['deck_nr'], 0)
-                        k_short = f"K{b['pos']}"
                         
+                        # DEINE ORIGINALEN PRIO-ANZEIGEN
                         if b['f'] >= 8: 
-                            st.success(f"🔥 **PRIO 1 (8/9):** D{b['deck_nr']}, {k_short} von {g['s']} ➔ {b['s']} ({k_bel} K.)")
+                            st.success(f"🔥 **PRIO 1 (8/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         elif b['f'] == 7:
-                            st.info(f"⭐ **PRIO 2 (7/9):** D{b['deck_nr']}, {k_short} von {g['s']} ➔ {b['s']} ({k_bel} K.)")
+                            st.info(f"⭐ **PRIO 2 (7/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         elif b['f'] == 6:
-                            st.warning(f"📈 **PRIO 3 (6/9):** D{b['deck_nr']}, {k_short} von {g['s']} ➔ {b['s']} ({k_bel} K.)")
+                            st.warning(f"📈 **PRIO 3 (6/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         else:
-                            st.write(f"🤝 **Tausch:** D{b['deck_nr']}, {k_short} von {g['s']} ➔ {b['s']} ({k_bel} K.)")
+                            st.write(f"🤝 **Tausch:** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
