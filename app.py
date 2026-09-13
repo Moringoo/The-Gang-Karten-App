@@ -39,6 +39,7 @@ df = load_data()
 if df is not None:
     st.title("💀 THE GANG HQ")
 
+    # Namen in der Original-Reihenfolge des Sheets
     namen = [str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""]
     n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
     
@@ -66,12 +67,15 @@ if df is not None:
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
                     
-                    try:
-                        res = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
-                        if res.status_code == 200:
+                    sc_idx = 1 + ((d_nr - 1) * 9)
+                    old_str = "".join([str(safe_int(sz.iloc[0, sc_idx + k])) for k in range(9)])
+                    
+                    if clean != old_str:
+                        try:
+                            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
                             erfolg += 1
-                    except:
-                        pass
+                        except:
+                            pass
                     
                     prozent_balken.progress((i + 1) / len(decks_to_save))
 
@@ -130,6 +134,7 @@ if df is not None:
                 sc = 1 + ((d - 1) * 9) 
                 if sc + 8 < len(df.columns):
                     cols_deck = df.columns[sc:sc+9]
+                    
                     dia_dichte = sum(1 for c in cols_deck if "(d)" in str(c).lower())
                     besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                     deck_wert = DECK_WERTE.get(d, 0)
@@ -144,9 +149,10 @@ if df is not None:
                     for i in range(9):
                         cn = df.columns[sc+i]
                         val = safe_int(row.iloc[sc+i])
-                        if val >= 2:
+                        
+                        if val >= 2: 
                             gbt.append({"s": sp, "k": cn, "col_idx": sc+i})
-                        elif val == 0:
+                        elif val == 0: 
                             bdr.append({
                                 "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
                                 "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
@@ -154,6 +160,7 @@ if df is not None:
 
         def process_trades(filter_dia):
             weg_geber = set()
+            
             akt_bdr = [b for b in bdr if ("(d)" in str(b["k"]).lower() or b["deck_nr"] == 10) == filter_dia]
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
@@ -179,6 +186,7 @@ if df is not None:
                 else:
                     for g, b in trades:
                         k_bel = DECK_WERTE.get(b['deck_nr'], 0)
+                        
                         if b['f'] >= 8: 
                             st.success(f"🔥 **PRIO 1 (8/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         elif b['f'] == 7:
