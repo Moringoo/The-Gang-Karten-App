@@ -39,7 +39,6 @@ df = load_data()
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # Namen in der Original-Reihenfolge des Sheets
     namen = [str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""]
     n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
     
@@ -67,15 +66,11 @@ if df is not None:
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
                     
-                    sc_idx = 1 + ((d_nr - 1) * 9)
-                    old_str = "".join([str(safe_int(sz.iloc[0, sc_idx + k])) for k in range(9)])
-                    
-                    if clean != old_str:
-                        try:
-                            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
-                            erfolg += 1
-                        except:
-                            pass
+                    try:
+                        requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
+                        erfolg += 1
+                    except:
+                        pass
                     
                     prozent_balken.progress((i + 1) / len(decks_to_save))
 
@@ -170,9 +165,9 @@ if df is not None:
                     g for g in gbt 
                     if g['col_idx'] == b['col_idx'] and g['s'] not in weg_geber and g['s'] != b["s"]
                 ]
-                if mögliche_geber:
-                    mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
-                    best_g = mögliche_geber[0]
+                if meger := mögliche_geber:
+                    meger.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
+                    best_g = meger[0]
                     results.append((best_g, b))
                     weg_geber.add(best_g['s'])
             return results
