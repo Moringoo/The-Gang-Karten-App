@@ -66,20 +66,18 @@ if df is not None:
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
                     
-                    sc_idx = 1 + ((d_nr - 1) * 9)
-                    old_str = "".join([str(safe_int(sz.iloc[0, sc_idx + k])) for k in range(9)])
-                    
-                    if clean != old_str:
-                        try:
-                            requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
+                    # Sendet jetzt DIREKT ohne Vorab-Vergleich ab!
+                    try:
+                        res = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
+                        if res.status_code == 200:
                             erfolg += 1
-                        except:
-                            pass
+                    except Exception as ex:
+                        pass
                     
                     prozent_balken.progress((i + 1) / len(decks_to_save))
 
                 st.balloons()
-                st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
+                st.success(f"Speicherbefehle gesendet!")
                 time.sleep(2)
                 st.rerun()
 
@@ -119,7 +117,7 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH MIT NEUER LOGIK ---
+    # --- ADMIN BEREICH ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
@@ -137,11 +135,6 @@ if df is not None:
                     besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                     deck_wert = DECK_WERTE.get(d, 0)
                     
-                    # --- NEUE GEWICHTUNG ---
-                    # 8/9 Deck = 10.000.000 Punkte
-                    # 7/9 Deck = 1.000.000 Punkte
-                    # 6/9 Deck = 100.000 Punkte
-                    # Der reine Kugelwert (max 10.000) kann diese Grenzen nun nicht mehr sprengen.
                     if besitz == 8: f_bonus = 10000000
                     elif besitz == 7: f_bonus = 1000000
                     elif besitz == 6: f_bonus = 100000
@@ -161,7 +154,6 @@ if df is not None:
         def process_trades(filter_dia):
             weg_geber = set()
             akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
-            # Nach dem neuen Score sortieren
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
             for b in akt_bdr:
