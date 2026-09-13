@@ -8,7 +8,6 @@ st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
 
 # --- 2. KONFIGURATION & WERTE ---
 GID = "2025591169"
-# Die neue Web-App URL aus deinem Screenshot:
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqP09ZEo_nGStzjW1M2HxYYVFXQcNsvhQ44vN8jvJvPQAk9FTiwySojxr4Dbqthk/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
@@ -40,7 +39,6 @@ df = load_data()
 if df is not None:
     st.title("💀 THE GANG HQ")
 
-    # Namen in der Original-Reihenfolge des Sheets
     namen = [str(n).strip() for n in df.iloc[:, 0].unique() if str(n).strip() != ""]
     n_sel = st.selectbox("Wer bist du?", ["Wählen..."] + namen)
     
@@ -121,7 +119,7 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH MIT ORIGINALER LOGIK ---
+    # --- ADMIN BEREICH MIT NEUER LOGIK ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
@@ -135,11 +133,15 @@ if df is not None:
                 sc = 1 + ((d - 1) * 9) 
                 if sc+8 < len(df.columns):
                     cols_deck = df.columns[sc:sc+9]
-                    
-                    dia_dichte = sum(1 for c in cols_deck if "(d)" in str(c).lower())
+                    dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
                     besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                     deck_wert = DECK_WERTE.get(d, 0)
                     
+                    # --- NEUE GEWICHTUNG ---
+                    # 8/9 Deck = 10.000.000 Punkte
+                    # 7/9 Deck = 1.000.000 Punkte
+                    # 6/9 Deck = 100.000 Punkte
+                    # Der reine Kugelwert (max 10.000) kann diese Grenzen nun nicht mehr sprengen.
                     if besitz == 8: f_bonus = 10000000
                     elif besitz == 7: f_bonus = 1000000
                     elif besitz == 6: f_bonus = 100000
@@ -150,27 +152,20 @@ if df is not None:
                     for i in range(9):
                         cn = df.columns[sc+i]
                         val = safe_int(row.iloc[sc+i])
-                        
-                        if val >= 2: 
-                            gbt.append({"s": sp, "k": cn, "col_idx": sc+i})
-                        elif val == 0: 
-                            bdr.append({
-                                "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
-                                "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
-                            })
+                        if val >= 2: gbt.append({"s": sp, "k": cn})
+                        elif val == 0: bdr.append({
+                            "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
+                            "wert": deck_wert, "deck_nr": d, "score": score
+                        })
 
         def process_trades(filter_dia):
             weg_geber = set()
-            
-            akt_bdr = [b for b in bdr if ("(d)" in str(b["k"]).lower() or b["deck_nr"] == 10) == filter_dia]
+            akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
+            # Nach dem neuen Score sortieren
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
-            
             for b in akt_bdr:
-                mögliche_geber = [
-                    g for g in gbt 
-                    if g['col_idx'] == b['col_idx'] and g['s'] not in weg_geber and g['s'] != b["s"]
-                ]
+                mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
                 if mögliche_geber:
                     mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
                     best_g = mögliche_geber[0]
@@ -187,7 +182,6 @@ if df is not None:
                 else:
                     for g, b in trades:
                         k_bel = DECK_WERTE.get(b['deck_nr'], 0)
-                        
                         if b['f'] >= 8: 
                             st.success(f"🔥 **PRIO 1 (8/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         elif b['f'] == 7:
