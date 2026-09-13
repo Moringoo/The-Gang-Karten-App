@@ -59,25 +59,40 @@ if df is not None:
 
             def save_all():
                 erfolg = 0
+                fehler_liste = []
                 prozent_balken = st.progress(0)
                 decks_to_save = list(alle_inputs.items())
                 
+                headers = {"User-Agent": "Mozilla/5.0"}
+
                 for i, (d_nr, werte_str) in enumerate(decks_to_save):
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
                     
                     try:
-                        requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
-                        erfolg += 1
-                    except:
-                        pass
+                        res = requests.get(
+                            SCRIPT_URL, 
+                            params={"name": n_sel, "deck": d_nr, "werte": w_send}, 
+                            headers=headers,
+                            allow_redirects=True,
+                            timeout=15
+                        )
+                        if res.status_code == 200:
+                            erfolg += 1
+                        else:
+                            fehler_liste.append(f"Deck {d_nr}: HTTP {res.status_code}")
+                    except Exception as ex:
+                        fehler_liste.append(f"Deck {d_nr}: {str(ex)}")
                     
                     prozent_balken.progress((i + 1) / len(decks_to_save))
 
-                st.balloons()
-                st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
-                time.sleep(2)
-                st.rerun()
+                if fehler_liste:
+                    st.error(f"Fehler beim Speichern: {', '.join(fehler_liste)}")
+                else:
+                    st.balloons()
+                    st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
+                    time.sleep(2)
+                    st.rerun()
 
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_top"):
                 save_all()
@@ -190,3 +205,4 @@ if df is not None:
                             st.warning(f"📈 **PRIO 3 (6/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         else:
                             st.write(f"🤝 **Tausch:** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
+                       
