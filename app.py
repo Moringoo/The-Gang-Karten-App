@@ -8,7 +8,8 @@ st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
 
 # --- 2. KONFIGURATION & WERTE ---
 GID = "2025591169"
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw71UB_1bRLELpRK1pzygSgV_uSxR4FHme1CRez4nC-80wGrwwORgYntwSyz0VofCs/exec" 
+# Die neue Web-App URL aus deinem Screenshot:
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqP09ZEo_nGStzjW1M2HxYYVFXQcNsvhQ44vN8jvJvPQAk9FTiwySojxr4Dbqthk/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
 DECK_WERTE = {
@@ -120,7 +121,7 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH MIT NEUER LOGIK ---
+    # --- ADMIN BEREICH MIT ORIGINALER LOGIK ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
@@ -135,12 +136,10 @@ if df is not None:
                 if sc+8 < len(df.columns):
                     cols_deck = df.columns[sc:sc+9]
                     
-                    # GOOGLE-SHEET FIX: Erkennt "(D)" und "(d)" absolut verlässlich
                     dia_dichte = sum(1 for c in cols_deck if "(d)" in str(c).lower())
                     besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                     deck_wert = DECK_WERTE.get(d, 0)
                     
-                    # --- DEINE ORIGINAL GEWICHTUNG ---
                     if besitz == 8: f_bonus = 10000000
                     elif besitz == 7: f_bonus = 1000000
                     elif besitz == 6: f_bonus = 100000
@@ -152,7 +151,6 @@ if df is not None:
                         cn = df.columns[sc+i]
                         val = safe_int(row.iloc[sc+i])
                         
-                        # GOOGLE-SHEET FIX: Merkt sich die genaue Spalte (col_idx) für 100% Zuverlässigkeit
                         if val >= 2: 
                             gbt.append({"s": sp, "k": cn, "col_idx": sc+i})
                         elif val == 0: 
@@ -164,13 +162,11 @@ if df is not None:
         def process_trades(filter_dia):
             weg_geber = set()
             
-            # GOOGLE-SHEET FIX: Filtert Diamant-Karten sauber heraus (auch bei Deck 10)
             akt_bdr = [b for b in bdr if ("(d)" in str(b["k"]).lower() or b["deck_nr"] == 10) == filter_dia]
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
             
             for b in akt_bdr:
-                # GOOGLE-SHEET FIX: Findet den Geber über die exakte Spalte im Sheet
                 mögliche_geber = [
                     g for g in gbt 
                     if g['col_idx'] == b['col_idx'] and g['s'] not in weg_geber and g['s'] != b["s"]
@@ -192,7 +188,6 @@ if df is not None:
                     for g, b in trades:
                         k_bel = DECK_WERTE.get(b['deck_nr'], 0)
                         
-                        # DEINE ORIGINALEN PRIO-ANZEIGEN
                         if b['f'] >= 8: 
                             st.success(f"🔥 **PRIO 1 (8/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         elif b['f'] == 7:
