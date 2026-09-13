@@ -66,18 +66,17 @@ if df is not None:
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
                     w_send = ",".join(list(clean))
                     
-                    # Sendet jetzt DIREKT ohne Vorab-Vergleich ab!
                     try:
                         res = requests.get(SCRIPT_URL, params={"name": n_sel, "deck": d_nr, "werte": w_send}, timeout=10)
                         if res.status_code == 200:
                             erfolg += 1
-                    except Exception as ex:
+                    except:
                         pass
                     
                     prozent_balken.progress((i + 1) / len(decks_to_save))
 
                 st.balloons()
-                st.success(f"Speicherbefehle gesendet!")
+                st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
                 time.sleep(2)
                 st.rerun()
 
@@ -117,7 +116,7 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH ---
+    # --- ADMIN BEREICH MIT ORIGINALER LOGIK ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
@@ -129,9 +128,9 @@ if df is not None:
                 continue
             for d in range(1, 16):
                 sc = 1 + ((d - 1) * 9) 
-                if sc+8 < len(df.columns):
+                if sc + 8 < len(df.columns):
                     cols_deck = df.columns[sc:sc+9]
-                    dia_dichte = sum(1 for c in cols_deck if "(D)" in str(c))
+                    dia_dichte = sum(1 for c in cols_deck if "(d)" in str(c).lower())
                     besitz = sum(1 for i in range(9) if safe_int(row.iloc[sc+i]) > 0)
                     deck_wert = DECK_WERTE.get(d, 0)
                     
@@ -145,19 +144,25 @@ if df is not None:
                     for i in range(9):
                         cn = df.columns[sc+i]
                         val = safe_int(row.iloc[sc+i])
-                        if val >= 2: gbt.append({"s": sp, "k": cn})
-                        elif val == 0: bdr.append({
-                            "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
-                            "wert": deck_wert, "deck_nr": d, "score": score
-                        })
+                        if val >= 2:
+                            gbt.append({"s": sp, "k": cn, "col_idx": sc+i})
+                        elif val == 0:
+                            bdr.append({
+                                "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
+                                "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
+                            })
 
         def process_trades(filter_dia):
             weg_geber = set()
-            akt_bdr = [b for b in bdr if ("(D)" in b["k"]) == filter_dia]
+            akt_bdr = [b for b in bdr if ("(d)" in str(b["k"]).lower() or b["deck_nr"] == 10) == filter_dia]
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
+            
             for b in akt_bdr:
-                mögliche_geber = [g for g in gbt if g['k'] == b['k'] and g['s'] not in weg_geber and g['s'] != b["s"]]
+                mögliche_geber = [
+                    g for g in gbt 
+                    if g['col_idx'] == b['col_idx'] and g['s'] not in weg_geber and g['s'] != b["s"]
+                ]
                 if mögliche_geber:
                     mögliche_geber.sort(key=lambda x: sum(1 for g2 in gbt if g2['s'] == x['s']))
                     best_g = mögliche_geber[0]
