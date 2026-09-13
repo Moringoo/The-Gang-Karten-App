@@ -8,7 +8,7 @@ st.set_page_config(page_title="The Gang HQ", page_icon="💀", layout="wide")
 
 # --- 2. KONFIGURATION & WERTE ---
 GID = "2025591169"
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqP09ZEo_nGStzjW1M2HxYYVFXQcNsvhQ44vN8jvJvPQAk9FTiwySojxr4Dbqthk/exec" 
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyeTXyjgbLxTPfXBQ6GmZ26i4OkugduQdX9akhO4W2BDxWninq8okJVcUnpj_KckLg/exec" 
 ADMIN_PASSWORT = "gang2026" 
 
 DECK_WERTE = {
@@ -71,7 +71,7 @@ if df is not None:
                     
                     try:
                         res = requests.get(
-                            SCRIPT_URL, 
+                            SCRIPT_URL.strip(), 
                             params={"name": n_sel, "deck": d_nr, "werte": w_send}, 
                             headers=headers,
                             allow_redirects=True,
@@ -205,4 +205,3 @@ if df is not None:
                             st.warning(f"📈 **PRIO 3 (6/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         else:
                             st.write(f"🤝 **Tausch:** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
-                       
