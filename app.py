@@ -60,31 +60,35 @@ if df is not None:
             def save_all():
                 erfolg = 0
                 fehler_liste = []
-                prozent_balken = st.progress(0)
                 decks_to_save = list(alle_inputs.items())
+                prozent_balken = st.progress(0)
                 
                 headers = {"User-Agent": "Mozilla/5.0"}
 
                 for i, (d_nr, werte_str) in enumerate(decks_to_save):
                     clean = "".join([c for c in werte_str if c.isdigit()]).ljust(9, '0')[:9]
-                    w_send = ",".join(list(clean))
                     
-                    try:
-                        res = requests.get(
-                            SCRIPT_URL.strip(), 
-                            params={"name": n_sel, "deck": d_nr, "werte": w_send}, 
-                            headers=headers,
-                            allow_redirects=True,
-                            timeout=30
-                        )
-                        if res.status_code == 200:
-                            erfolg += 1
-                        else:
-                            fehler_liste.append(f"Deck {d_nr}: HTTP {res.status_code}")
-                    except Exception as ex:
-                        fehler_liste.append(f"Deck {d_nr}: Timeout/Fehler")
+                    # Vergleiche mit dem alten Stand im Sheet, um NUR Geändertes zu senden
+                    sc_idx = 1 + ((d_nr - 1) * 9)
+                    old_str = "".join([str(safe_int(sz.iloc[0, sc_idx + k])) for k in range(9)])
                     
-                    time.sleep(0.2)
+                    if clean != old_str:
+                        w_send = ",".join(list(clean))
+                        try:
+                            res = requests.get(
+                                SCRIPT_URL.strip(), 
+                                params={"name": n_sel, "deck": d_nr, "werte": w_send}, 
+                                headers=headers,
+                                allow_redirects=True,
+                                timeout=15
+                            )
+                            if res.status_code == 200:
+                                erfolg += 1
+                            else:
+                                fehler_liste.append(f"Deck {d_nr}: HTTP {res.status_code}")
+                        except Exception as ex:
+                            fehler_liste.append(f"Deck {d_nr}: Fehler")
+                    
                     prozent_balken.progress((i + 1) / len(decks_to_save))
 
                 if fehler_liste:
@@ -92,9 +96,10 @@ if df is not None:
                 else:
                     st.balloons()
                     st.success(f"Erfolgreich {erfolg} Decks aktualisiert!")
-                    time.sleep(2)
+                    time.sleep(1)
                     st.rerun()
 
+            # --- OBERER BUTTON ---
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_top"):
                 save_all()
 
@@ -127,6 +132,7 @@ if df is not None:
                         else:
                             st.markdown(f"<p style='color:red; font-size:12px; margin-top:-10px;'>❌ Zu viele! ({count}/9)</p>", unsafe_allow_html=True)
 
+            # --- UNTERER BUTTON (IDENTISCH ZUM OBEREN) ---
             st.markdown("---")
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
@@ -162,8 +168,6 @@ if df is not None:
                         val = safe_int(row.iloc[sc+i])
                         card_pos = i + 1
                         
-                        # NUR für Deck 15 gilt: Ab Karte 4 IMMER Diamant-Karte!
-                        # Für alle anderen Decks gilt weiterhin normal die Kennzeichnung "(d)" aus dem Header.
                         is_diamond = "(d)" in str(cn).lower() or (d == 15 and card_pos >= 4)
                         
                         if val >= 2: 
@@ -176,7 +180,6 @@ if df is not None:
 
         def process_trades(filter_dia):
             weg_geber = set()
-            
             akt_bdr = [b for b in bdr if b["is_dia"] == filter_dia]
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
@@ -202,7 +205,6 @@ if df is not None:
                 else:
                     for g, b in trades:
                         k_bel = DECK_WERTE.get(b['deck_nr'], 0)
-                        
                         if b['f'] >= 8: 
                             st.success(f"🔥 **PRIO 1 (8/9):** {g['k']} von {g['s']} ➔ {b['s']} (D{b['deck_nr']} - {k_bel} K.)")
                         elif b['f'] == 7:
