@@ -75,15 +75,16 @@ if df is not None:
                             params={"name": n_sel, "deck": d_nr, "werte": w_send}, 
                             headers=headers,
                             allow_redirects=True,
-                            timeout=15
+                            timeout=30
                         )
                         if res.status_code == 200:
                             erfolg += 1
                         else:
                             fehler_liste.append(f"Deck {d_nr}: HTTP {res.status_code}")
                     except Exception as ex:
-                        fehler_liste.append(f"Deck {d_nr}: {str(ex)}")
+                        fehler_liste.append(f"Deck {d_nr}: Timeout/Fehler")
                     
+                    time.sleep(0.2)
                     prozent_balken.progress((i + 1) / len(decks_to_save))
 
                 if fehler_liste:
@@ -130,7 +131,7 @@ if df is not None:
             if st.button("🚀 ALLE ÄNDERUNGEN SPEICHERN", use_container_width=True, key="save_bottom"):
                 save_all()
 
-    # --- ADMIN BEREICH MIT ORIGINALER LOGIK ---
+    # --- ADMIN BEREICH ---
     st.markdown("---")
     pwd = st.text_input("Admin-Passwort für Tauschanalyse", type="password")
     if pwd == ADMIN_PASSWORT:
@@ -159,19 +160,24 @@ if df is not None:
                     for i in range(9):
                         cn = df.columns[sc+i]
                         val = safe_int(row.iloc[sc+i])
+                        card_pos = i + 1
+                        
+                        # NUR für Deck 15 gilt: Ab Karte 4 IMMER Diamant-Karte!
+                        # Für alle anderen Decks gilt weiterhin normal die Kennzeichnung "(d)" aus dem Header.
+                        is_diamond = "(d)" in str(cn).lower() or (d == 15 and card_pos >= 4)
                         
                         if val >= 2: 
-                            gbt.append({"s": sp, "k": cn, "col_idx": sc+i})
+                            gbt.append({"s": sp, "k": cn, "col_idx": sc+i, "is_dia": is_diamond})
                         elif val == 0: 
                             bdr.append({
                                 "s": sp, "k": cn, "f": besitz, "dichte": dia_dichte, 
-                                "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i
+                                "wert": deck_wert, "deck_nr": d, "score": score, "col_idx": sc+i, "is_dia": is_diamond
                             })
 
         def process_trades(filter_dia):
             weg_geber = set()
             
-            akt_bdr = [b for b in bdr if ("(d)" in str(b["k"]).lower() or b["deck_nr"] == 10) == filter_dia]
+            akt_bdr = [b for b in bdr if b["is_dia"] == filter_dia]
             akt_bdr = sorted(akt_bdr, key=lambda x: x['score'], reverse=True)
             results = []
             
